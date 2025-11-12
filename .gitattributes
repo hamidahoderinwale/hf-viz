@@ -1,0 +1,23 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Python files
+*.py text eol=lf
+
+# Frontend files
+*.tsx text eol=lf
+*.ts text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+
+# Markdown
+*.md text eol=lf
+
+# Config files
+*.toml text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
