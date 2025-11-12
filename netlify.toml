@@ -1,0 +1,27 @@
+[build]
+  base = "frontend"
+  publish = "frontend/build"
+  command = "npm install && npm run build"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+# Redirect all routes to index.html for React Router
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Netlify Functions (if using serverless backend)
+[functions]
+  directory = "netlify-functions"
+  node_bundler = "esbuild"
+
+# Headers for API routes
+[[headers]]
+  for = "/.netlify/functions/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Headers = "Content-Type"
+    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
+

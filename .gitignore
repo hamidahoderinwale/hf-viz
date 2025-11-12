@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Caches
+*.pkl
+*.pickle
+*.cache
+embeddings_cache.pkl
+reduced_embeddings_cache.pkl
+*.npy
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Gradio
+flagged/
+
+# Data
+*.parquet
+*.csv
+data/
+
