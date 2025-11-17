@@ -125,7 +125,7 @@ export default function ModelCountTracker() {
             </div>
           </div>
 
-          {growthStats && !growthStats.error && (
+          {growthStats && (
             <div className="growth-stats">
               <h4>Growth (Last {growthStats.period_days} Days)</h4>
               <div className="stats-grid">

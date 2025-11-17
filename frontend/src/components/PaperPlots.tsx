@@ -214,6 +214,8 @@ export default function PaperPlots({ data, width = 800, height = 600 }: PaperPlo
       const x = xScale(label);
       const bandWidth = xScale.bandwidth();
 
+      if (x === undefined) return;
+
       // Calculate quartiles
       const sorted = dataset.sort((a, b) => a - b);
       const q1 = d3.quantile(sorted, 0.25) || 0;
@@ -594,8 +596,11 @@ export default function PaperPlots({ data, width = 800, height = 600 }: PaperPlo
           count: d.total_models
         })).sort((a: any, b: any) => a.date - b.date);
 
+        const extent = d3.extent(counts, (d: any) => d.date);
+        if (!extent[0] || !extent[1]) return;
+        
         const xScale = d3.scaleTime()
-          .domain(d3.extent(counts, (d: any) => d.date) as [Date, Date])
+          .domain(extent as [Date, Date])
           .range([0, innerWidth]);
 
         const yScale = d3.scaleLinear()
@@ -619,11 +624,11 @@ export default function PaperPlots({ data, width = 800, height = 600 }: PaperPlo
           .data(counts)
           .enter()
           .append('circle')
-          .attr('cx', d => xScale(d.date))
-          .attr('cy', d => yScale(d.count))
+          .attr('cx', (d: any) => xScale(d.date))
+          .attr('cy', (d: any) => yScale(d.count))
           .attr('r', 3)
           .attr('fill', '#4a90e2')
-          .on('mouseover', function(event, d) {
+          .on('mouseover', function(event, d: any) {
             d3.select(this).attr('r', 5);
             const tooltip = d3.select('body').append('div')
               .attr('class', 'plot-tooltip')
