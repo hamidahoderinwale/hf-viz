@@ -88,15 +88,16 @@ export default function UVProjectionSquare({
       const values = sampledData.map(d => colorBy === 'downloads' ? d.downloads : d.likes);
       const min = Math.min(...values);
       const max = Math.max(...values);
-      // Use viridis color scale for continuous values
-      const continuousScale = getContinuousColorScale(min, max, 'viridis');
+      // Use logarithmic scaling for downloads/likes (heavily skewed distributions)
+      const useLogScale = colorBy === 'downloads' || colorBy === 'likes';
+      const continuousScale = getContinuousColorScale(min, max, 'viridis', useLogScale);
       colorScale = (d: ModelPoint) => {
         const val = colorBy === 'downloads' ? d.downloads : d.likes;
         return continuousScale(val);
       };
     }
 
-    // Size scale
+    // Size scale with logarithmic scaling for better representation
     const sizeValues = sampledData.map(d => {
       if (colorBy === 'downloads') return d.downloads;
       if (colorBy === 'likes') return d.likes;
@@ -104,10 +105,22 @@ export default function UVProjectionSquare({
     });
     const sizeMin = Math.min(...sizeValues);
     const sizeMax = Math.max(...sizeValues);
+    // Use logarithmic scaling for downloads/likes
+    const useLogSize = colorBy === 'downloads' || colorBy === 'likes';
+    const logSizeMin = useLogSize && sizeMin > 0 ? Math.log10(sizeMin + 1) : sizeMin;
+    const logSizeMax = useLogSize && sizeMax > 0 ? Math.log10(sizeMax + 1) : sizeMax;
+    const logSizeRange = logSizeMax - logSizeMin || 1;
     const sizeRange = sizeMax - sizeMin || 1;
     const sizeScale = (d: ModelPoint) => {
+      let normalizedSize: number;
       const val = colorBy === 'downloads' ? d.downloads : colorBy === 'likes' ? d.likes : 1;
-      return 1 + ((val - sizeMin) / sizeRange) * 2; // 1 to 3 pixel radius
+      if (useLogSize && val > 0) {
+        const logVal = Math.log10(val + 1);
+        normalizedSize = (logVal - logSizeMin) / logSizeRange;
+      } else {
+        normalizedSize = (val - sizeMin) / sizeRange;
+      }
+      return 1 + Math.max(0, Math.min(1, normalizedSize)) * 2; // 1 to 3 pixel radius
     };
 
     // Family map

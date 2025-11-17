@@ -50,13 +50,19 @@ export const PIPELINE_COLORS: Record<string, string> = {
   'unknown': '#cccccc',
 };
 
-// Continuous color scales
+// Continuous color scales with optional logarithmic scaling
 export function getContinuousColorScale(
   min: number,
   max: number,
-  scheme: 'viridis' | 'plasma' | 'inferno' | 'magma' | 'coolwarm' = 'viridis'
+  scheme: 'viridis' | 'plasma' | 'inferno' | 'magma' | 'coolwarm' = 'viridis',
+  useLogScale: boolean = false
 ): (value: number) => string {
+  // Use logarithmic scaling for heavily skewed distributions (like downloads/likes)
+  // This provides better visual representation of the data distribution
   const range = max - min || 1;
+  const logMin = useLogScale && min > 0 ? Math.log10(min + 1) : min;
+  const logMax = useLogScale && max > 0 ? Math.log10(max + 1) : max;
+  const logRange = logMax - logMin || 1;
   
   // Viridis-like color scale (blue to yellow)
   const viridis = (t: number) => {
@@ -105,7 +111,13 @@ export function getContinuousColorScale(
   const colorFn = schemes[scheme];
   
   return (value: number) => {
-    const normalized = Math.max(0, Math.min(1, (value - min) / range));
+    let normalized: number;
+    if (useLogScale && value > 0) {
+      const logValue = Math.log10(value + 1);
+      normalized = Math.max(0, Math.min(1, (logValue - logMin) / logRange));
+    } else {
+      normalized = Math.max(0, Math.min(1, (value - min) / range));
+    }
     return colorFn(normalized);
   };
 }

@@ -542,15 +542,17 @@ function SceneContent({
       const values = sampledData.map(d => colorBy === 'downloads' ? d.downloads : d.likes);
       const min = Math.min(...values);
       const max = Math.max(...values);
-      // Use selected color scheme for continuous values
-      const continuousScale = getContinuousColorScale(min, max, colorScheme);
+      // Use logarithmic scaling for downloads/likes (heavily skewed distributions)
+      // This provides better visual representation of the data
+      const useLogScale = colorBy === 'downloads' || colorBy === 'likes';
+      const continuousScale = getContinuousColorScale(min, max, colorScheme, useLogScale);
       colorScale = (d: ModelPoint) => {
         const val = colorBy === 'downloads' ? d.downloads : d.likes;
         return continuousScale(val);
       };
     }
 
-    // Size scale
+    // Size scale with logarithmic scaling for better representation of skewed distributions
     const sizeValues = sampledData.map(d => {
       if (sizeBy === 'downloads') return d.downloads;
       if (sizeBy === 'likes') return d.likes;
@@ -558,8 +560,24 @@ function SceneContent({
     });
     const sizeMin = Math.min(...sizeValues);
     const sizeMax = Math.max(...sizeValues);
+    // Use logarithmic scaling for downloads/likes to better represent the distribution
+    const useLogSize = sizeBy === 'downloads' || sizeBy === 'likes';
+    const logSizeMin = useLogSize && sizeMin > 0 ? Math.log10(sizeMin + 1) : sizeMin;
+    const logSizeMax = useLogSize && sizeMax > 0 ? Math.log10(sizeMax + 1) : sizeMax;
+    const logSizeRange = logSizeMax - logSizeMin || 1;
     const sizeRange = sizeMax - sizeMin || 1;
     const sizeScale = (d: ModelPoint) => {
+      let normalizedSize: number;
+      const val = sizeBy === 'downloads' ? d.downloads : sizeBy === 'likes' ? d.likes : 1;
+      if (useLogSize && val > 0) {
+        const logVal = Math.log10(val + 1);
+        normalizedSize = (logVal - logSizeMin) / logSizeRange;
+      } else {
+        normalizedSize = (val - sizeMin) / sizeRange;
+      }
+      // Scale from 0.5 to 3.0 for better visibility
+      return 0.5 + Math.max(0, Math.min(1, normalizedSize)) * 2.5;
+    }; {
       const val = sizeBy === 'downloads' ? d.downloads : sizeBy === 'likes' ? d.likes : 1;
       return 0.5 + ((val - sizeMin) / sizeRange) * 1.5; // 0.5 to 2.0 scale
     };
