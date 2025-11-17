@@ -405,9 +405,15 @@ export default function EnhancedScatterPlot({
                 .duration(500)
                 .ease(d3.easeCubicOut)
                 .attr('r', (d) => {
-                  if (sizeBy === 'downloads') return sizeScale(d.downloads);
-                  if (sizeBy === 'likes') return sizeScale(d.likes);
-                  return 5;
+                  if (typeof sizeScale === 'function' && sizeScale.length === 1) {
+                    // Custom function that takes ModelPoint
+                    return sizeScale(d);
+                  } else {
+                    // D3 scale that takes a number
+                    if (sizeBy === 'downloads') return (sizeScale as any)(d.downloads);
+                    if (sizeBy === 'likes') return (sizeScale as any)(d.likes);
+                    return 5;
+                  }
                 })
                 .attr('opacity', (d) => {
                   if (selectedPoints.has(d.model_id)) return 1;
@@ -423,9 +429,15 @@ export default function EnhancedScatterPlot({
             .attr('cx', (d) => xScale(d.x))
             .attr('cy', (d) => yScale(d.y))
             .attr('r', (d) => {
-              if (sizeBy === 'downloads') return sizeScale(d.downloads);
-              if (sizeBy === 'likes') return sizeScale(d.likes);
-              return 5;
+              if (typeof sizeScale === 'function' && sizeScale.length === 1) {
+                // Custom function that takes ModelPoint
+                return sizeScale(d);
+              } else {
+                // D3 scale that takes a number
+                if (sizeBy === 'downloads') return (sizeScale as any)(d.downloads);
+                if (sizeBy === 'likes') return (sizeScale as any)(d.likes);
+                return 5;
+              }
             })
             .attr('opacity', (d) => {
               if (selectedPoints.has(d.model_id)) return 1;
@@ -478,11 +490,18 @@ export default function EnhancedScatterPlot({
           .attr('opacity', 1)
           .attr('stroke-width', 2)
           .attr('r', () => {
-            const baseSize = sizeBy === 'downloads' 
-              ? sizeScale(model.downloads) 
-              : sizeBy === 'likes' 
-              ? sizeScale(model.likes) 
-              : 5;
+            let baseSize: number;
+            if (typeof sizeScale === 'function' && sizeScale.length === 1) {
+              // Custom function that takes ModelPoint
+              baseSize = sizeScale(model);
+            } else {
+              // D3 scale that takes a number
+              baseSize = sizeBy === 'downloads' 
+                ? (sizeScale as any)(model.downloads) 
+                : sizeBy === 'likes' 
+                ? (sizeScale as any)(model.likes) 
+                : 5;
+            }
             return baseSize * 1.3;
           });
         
@@ -556,9 +575,15 @@ export default function EnhancedScatterPlot({
             .attr('opacity', 0.7)
             .attr('stroke-width', 0.5)
             .attr('r', () => {
-              if (sizeBy === 'downloads') return sizeScale(model.downloads);
-              if (sizeBy === 'likes') return sizeScale(model.likes);
-              return 5;
+              if (typeof sizeScale === 'function' && sizeScale.length === 1) {
+                // Custom function that takes ModelPoint
+                return sizeScale(model);
+              } else {
+                // D3 scale that takes a number
+                if (sizeBy === 'downloads') return (sizeScale as any)(model.downloads);
+                if (sizeBy === 'likes') return (sizeScale as any)(model.likes);
+                return 5;
+              }
             });
         }
         g.selectAll('.tooltip').transition().duration(200).attr('opacity', 0).remove();
