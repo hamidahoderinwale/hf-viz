@@ -599,10 +599,10 @@ export default function PaperPlots({ data, width = 800, height = 600 }: PaperPlo
         })).sort((a: any, b: any) => a.date - b.date);
 
         const extent = d3.extent(counts, (d: any) => d.date);
-        if (!extent[0] || !extent[1]) return;
+        if (!extent[0] || !extent[1] || !(extent[0] instanceof Date) || !(extent[1] instanceof Date)) return;
         
         const xScale = d3.scaleTime()
-          .domain([extent[0] as Date, extent[1] as Date])
+          .domain([extent[0], extent[1]])
           .range([0, innerWidth]);
 
         const yScale = d3.scaleLinear()
