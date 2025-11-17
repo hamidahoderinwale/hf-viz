@@ -900,9 +900,8 @@ function App() {
                   <div 
                     style={{ flex: 1, position: 'relative' }}
                     onMouseMove={(e) => {
-                      if (hoveredModel) {
-                        setTooltipPosition({ x: e.clientX, y: e.clientY });
-                      }
+                      // Update tooltip position when mouse moves
+                      setTooltipPosition({ x: e.clientX, y: e.clientY });
                     }}
                     onMouseLeave={() => {
                       setHoveredModel(null);

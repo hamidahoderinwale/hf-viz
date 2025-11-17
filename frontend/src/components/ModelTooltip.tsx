@@ -40,10 +40,20 @@ export default function ModelTooltip({ model, position, visible }: ModelTooltipP
     const fetchDescription = async () => {
       try {
         // Try to get description from Hugging Face API
+        // Use HF token if available (from env or localStorage)
+        const hfToken = process.env.REACT_APP_HF_TOKEN || 
+                       (typeof window !== 'undefined' ? localStorage.getItem('HF_TOKEN') : null);
+        
+        const headers: HeadersInit = {
+          'Accept': 'application/json',
+        };
+        
+        if (hfToken) {
+          headers['Authorization'] = `Bearer ${hfToken}`;
+        }
+        
         const response = await fetch(`https://huggingface.co/api/models/${model.model_id}`, {
-          headers: {
-            'Accept': 'application/json',
-          },
+          headers,
         });
         
         if (response.ok) {
