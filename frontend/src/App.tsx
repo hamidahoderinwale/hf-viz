@@ -10,6 +10,7 @@ import ModelModal from './components/ModelModal';
 import PaperPlots from './components/PaperPlots';
 import LiveModelCount from './components/LiveModelCount';
 import ColorLegend from './components/ColorLegend';
+import ModelTooltip from './components/ModelTooltip';
 import { ModelPoint, Stats, FamilyTree, SearchResult, SimilarModel } from './types';
 import cache, { IndexedDBCache } from './utils/indexedDB';
 import { debounce } from './utils/debounce';
@@ -53,6 +54,8 @@ function App() {
   const [sizeBy, setSizeBy] = useState('downloads');
   const [colorScheme, setColorScheme] = useState<'viridis' | 'plasma' | 'inferno' | 'magma' | 'coolwarm'>('viridis');
   const [showLegend, setShowLegend] = useState(true);
+  const [hoveredModel, setHoveredModel] = useState<ModelPoint | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
   
   const activeFilterCount = (minDownloads > 0 ? 1 : 0) + 
                            (minLikes > 0 ? 1 : 0) + 
