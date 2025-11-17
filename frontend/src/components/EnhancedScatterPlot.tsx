@@ -118,7 +118,7 @@ export default function EnhancedScatterPlot({
     const sizeExtent = d3.extent(sizeValues) as [number, number];
     // Use logarithmic scale for downloads/likes
     const useLogSize = sizeBy === 'downloads' || sizeBy === 'likes';
-    let sizeScale: d3.ScaleSqrt<number, number> | ((d: ModelPoint) => number);
+    let sizeScale: ReturnType<typeof d3.scaleSqrt> | ((d: ModelPoint) => number);
     if (useLogSize) {
       const logExtent: [number, number] = [
         Math.log10(sizeExtent[0] + 1),
