@@ -116,15 +116,35 @@ export default function LiveModelCount({ compact = true }: { compact?: boolean }
           disabled={loading}
           title="Refresh"
         >
-          {loading ? '⟳' : '⟳'}
+          ⟳
         </button>
       </div>
       {loading && !currentCount ? (
-        <div className="count-loading">Loading...</div>
+        <div className="count-loading" style={{ textAlign: 'center', padding: '1rem', color: '#666' }}>Loading...</div>
       ) : error && !currentCount ? (
-        <div className="count-error">
-          Error: {error}
-          <button onClick={fetchCurrentCount}>Retry</button>
+        <div className="count-error" style={{ 
+          padding: '1rem', 
+          background: '#ffebee', 
+          border: '1px solid #ffcdd2', 
+          borderRadius: '4px',
+          color: '#c62828',
+          textAlign: 'center'
+        }}>
+          <div style={{ marginBottom: '0.5rem' }}>Error: {error}</div>
+          <button 
+            onClick={fetchCurrentCount}
+            style={{
+              background: '#f5f5f5',
+              border: '1px solid #ddd',
+              borderRadius: '4px',
+              padding: '0.5rem 1rem',
+              cursor: 'pointer',
+              fontSize: '0.875rem',
+              color: '#333'
+            }}
+          >
+            Retry
+          </button>
         </div>
       ) : currentCount ? (
         <div className="count-content">

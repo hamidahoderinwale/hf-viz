@@ -72,13 +72,14 @@
   color: #ffcccc;
 }
 
-/* Full version (for sidebar) */
+/* Full version (for sidebar) - matches sidebar-section style */
 .live-model-count-full {
   background: white;
+  border: 1px solid #e0e0e0;
   border-radius: 8px;
   padding: 1rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   margin-bottom: 1rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .count-header {
@@ -90,8 +91,11 @@
 
 .count-header h4 {
   margin: 0;
-  font-size: 1rem;
-  color: #333;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #2a2a2a;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .refresh-btn-small {
@@ -102,10 +106,17 @@
   cursor: pointer;
   font-size: 0.875rem;
   transition: all 0.2s;
+  color: #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
 }
 
 .refresh-btn-small:hover:not(:disabled) {
   background: #e0e0e0;
+  border-color: #bbb;
   transform: rotate(180deg);
 }
 
@@ -122,23 +133,26 @@
 
 .count-display {
   text-align: center;
-  padding: 1rem;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 1.25rem 1rem;
+  background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
   border-radius: 8px;
   color: white;
+  border: 1px solid #3a3a3a;
 }
 
 .count-number {
   font-size: 2.5rem;
-  font-weight: bold;
-  margin-bottom: 0.25rem;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  letter-spacing: -0.02em;
 }
 
 .count-label-full {
   font-size: 0.875rem;
   opacity: 0.95;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
 }
 
 .count-timestamp {
