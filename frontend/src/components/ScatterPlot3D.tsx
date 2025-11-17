@@ -267,7 +267,8 @@ function FamilyEdge({ start, end, parentColor, childColor, depth }: FamilyEdgePr
   );
 }
 
-function SceneContent({
+// Memoize SceneContent to prevent unnecessary re-renders
+const SceneContent = memo(function SceneContent({
   data,
   familyTree,
   colorBy,
@@ -433,7 +434,24 @@ function SceneContent({
     return combined;
   }, [data, familyTree, selectedModelId, spatialIndex, camera, gl, isInteracting]);
 
+  // Cache scales to avoid recalculation
+  const scalesCacheRef = useRef<{
+    dataLength: number;
+    colorBy: string;
+    sizeBy: string;
+    colorScheme: string;
+    scales: any;
+  } | null>(null);
+  
   const { xScale, yScale, zScale, colorScale, sizeScale, familyMap } = useMemo(() => {
+    // Return cached scales if inputs haven't changed
+    if (scalesCacheRef.current &&
+        scalesCacheRef.current.dataLength === sampledData.length &&
+        scalesCacheRef.current.colorBy === colorBy &&
+        scalesCacheRef.current.sizeBy === sizeBy &&
+        scalesCacheRef.current.colorScheme === colorScheme) {
+      return scalesCacheRef.current.scales;
+    }
     if (sampledData.length === 0) {
       return {
         xScale: (x: number) => x,
@@ -587,7 +605,18 @@ function SceneContent({
       });
     }
 
-    return { xScale, yScale, zScale, colorScale, sizeScale, familyMap };
+    const scales = { xScale, yScale, zScale, colorScale, sizeScale, familyMap };
+    
+    // Cache the scales
+    scalesCacheRef.current = {
+      dataLength: sampledData.length,
+      colorBy,
+      sizeBy,
+      colorScheme,
+      scales,
+    };
+    
+    return scales;
   }, [sampledData, familyTree, colorBy, sizeBy, colorScheme]);
 
   // Build family edges with color coding by depth
@@ -694,7 +723,18 @@ function SceneContent({
       <axesHelper args={[2]} />
     </>
   );
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison to prevent unnecessary re-renders
+  return (
+    prevProps.data.length === nextProps.data.length &&
+    prevProps.colorBy === nextProps.colorBy &&
+    prevProps.sizeBy === nextProps.sizeBy &&
+    prevProps.colorScheme === nextProps.colorScheme &&
+    prevProps.selectedModelId === nextProps.selectedModelId &&
+    prevProps.isInteracting === nextProps.isInteracting &&
+    (prevProps.familyTree?.length || 0) === (nextProps.familyTree?.length || 0)
+  );
+});
 
 // Component to track interaction state
 function InteractionTracker({ 

@@ -139,16 +139,19 @@ export default function EnhancedScatterPlot({
     return { xScaleBase, yScaleBase, colorScale, sizeScale, useLogSize };
   }, [sampledData, width, height, margin, colorBy, sizeBy]);
 
-  // Apply zoom transform to scales
+  // Apply zoom transform to scales - throttle updates for performance
+  const transformRef = useRef(transform);
+  transformRef.current = transform;
+  
   const xScale = useMemo(() => {
     const scale = xScaleBase.copy();
     return transform.rescaleX(scale);
-  }, [xScaleBase, transform]);
+  }, [xScaleBase, transform.k, transform.x, transform.y]);
 
   const yScale = useMemo(() => {
     const scale = yScaleBase.copy();
     return transform.rescaleY(scale);
-  }, [yScaleBase, transform]);
+  }, [yScaleBase, transform.k, transform.x, transform.y]);
 
   // Reset zoom handler
   const resetZoom = useCallback(() => {
@@ -387,7 +390,7 @@ export default function EnhancedScatterPlot({
       brushG.call(brush);
     });
 
-    // Add points with smooth transitions
+    // Add points with optimized transitions (reduced duration for better performance)
     const points = g
       .selectAll<SVGCircleElement, ModelPoint>('circle')
       .data(sampledData, (d) => d.model_id)
@@ -402,7 +405,7 @@ export default function EnhancedScatterPlot({
             .call((enter) =>
               enter
                 .transition()
-                .duration(500)
+                .duration(sampledData.length > 10000 ? 200 : 300) // Faster transitions for large datasets
                 .ease(d3.easeCubicOut)
                 .attr('r', (d): number => {
                   if (useLogSize) {
@@ -424,7 +427,7 @@ export default function EnhancedScatterPlot({
         (update) =>
           update
             .transition()
-            .duration(300)
+            .duration(sampledData.length > 10000 ? 150 : 200) // Faster transitions for large datasets
             .ease(d3.easeCubicOut)
             .attr('cx', (d) => xScale(d.x))
             .attr('cy', (d) => yScale(d.y))

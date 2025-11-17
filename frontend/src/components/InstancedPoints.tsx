@@ -97,15 +97,36 @@ export default function InstancedPoints({
     }
   }, [points, colors, sizes, selectedModelId, familyModelIds]);
 
+  // Track if updates are needed to avoid unnecessary work
+  const needsUpdateRef = useRef(true);
+  const lastUpdateFrameRef = useRef(0);
+  const frameSkipRef = useRef(0);
+  
+  // Mark as needing update when props change
+  useEffect(() => {
+    needsUpdateRef.current = true;
+  }, [points, colors, sizes, selectedModelId, familyModelIds]);
+
   // Handle raycasting for clicks and hovers, smooth transitions, and depth-based opacity
   useFrame((state, delta) => {
     if (!meshRef.current || !camera) return;
 
     const mesh = meshRef.current;
+    
+    // Skip frames for very large datasets to improve performance
+    // Update every frame for <10K points, every 2nd frame for 10K-50K, every 3rd for >50K
+    const frameSkip = points.length > 50000 ? 3 : points.length > 10000 ? 2 : 1;
+    frameSkipRef.current++;
+    if (frameSkipRef.current % frameSkip !== 0 && !needsUpdateRef.current) {
+      return;
+    }
+    
     const matrix = new THREE.Matrix4();
     const scale = new THREE.Vector3(1, 1, 1);
     const position = new THREE.Vector3();
     const color = new THREE.Color();
+    
+    let hasChanges = false;
     
     // Smooth scale transitions and update depth-based opacity
     for (let i = 0; i < points.length; i++) {
@@ -114,37 +135,50 @@ export default function InstancedPoints({
       const isFamilyMember = familyModelIds.has(point.model_id);
       
       // Update target scale for hover
-      if (hoveredIndex.current === i) {
-        targetScales.current[i] = sizes[i] * 1.5;
-      } else {
-        targetScales.current[i] = (isSelected || isFamilyMember) ? sizes[i] * 1.5 : sizes[i];
+      const newTargetScale = hoveredIndex.current === i 
+        ? sizes[i] * 1.5 
+        : (isSelected || isFamilyMember) ? sizes[i] * 1.5 : sizes[i];
+      
+      if (targetScales.current[i] !== newTargetScale) {
+        targetScales.current[i] = newTargetScale;
+        hasChanges = true;
       }
       
-      // Smooth scale transition
+      // Smooth scale transition (only if target changed or still transitioning)
+      const oldScale = currentScales.current[i];
       currentScales.current[i] += (targetScales.current[i] - currentScales.current[i]) * 0.15;
-      
-      // Calculate distance from camera for depth-based opacity
-      position.set(point.x, point.y, point.z);
-      const distance = position.distanceTo(camera.position);
-      const maxDistance = 10;
-      const minDistance = 1;
-      const distanceFactor = Math.max(0.4, Math.min(1, 1 - (distance - minDistance) / (maxDistance - minDistance)));
-      
-      // Update color with distance-based brightness adjustment
-      color.set(colors[i]);
-      if (isSelected) {
-        color.set('#ffffff');
-      } else if (isFamilyMember) {
-        color.set('#4a4a4a');
-      } else {
-        // Slightly brighten colors for better visibility
-        color.multiplyScalar(1.2);
-        // Clamp RGB values to [0, 1] range
-        color.r = Math.max(0, Math.min(1, color.r));
-        color.g = Math.max(0, Math.min(1, color.g));
-        color.b = Math.max(0, Math.min(1, color.b));
+      if (Math.abs(currentScales.current[i] - oldScale) > 0.001) {
+        hasChanges = true;
       }
-      mesh.setColorAt(i, color);
+      
+      // Only update color if selected/family state changed (optimization)
+      // For large datasets, skip distance-based color updates to save performance
+      const shouldUpdateColor = points.length < 20000 || isSelected || isFamilyMember || hoveredIndex.current === i;
+      
+      if (shouldUpdateColor) {
+        // Calculate distance from camera for depth-based opacity (only for visible/important points)
+        position.set(point.x, point.y, point.z);
+        const distance = position.distanceTo(camera.position);
+        const maxDistance = 10;
+        const minDistance = 1;
+        const distanceFactor = Math.max(0.4, Math.min(1, 1 - (distance - minDistance) / (maxDistance - minDistance)));
+        
+        // Update color with distance-based brightness adjustment
+        color.set(colors[i]);
+        if (isSelected) {
+          color.set('#ffffff');
+        } else if (isFamilyMember) {
+          color.set('#4a4a4a');
+        } else {
+          // Slightly brighten colors for better visibility
+          color.multiplyScalar(1.2);
+          // Clamp RGB values to [0, 1] range
+          color.r = Math.max(0, Math.min(1, color.r));
+          color.g = Math.max(0, Math.min(1, color.g));
+          color.b = Math.max(0, Math.min(1, color.b));
+        }
+        mesh.setColorAt(i, color);
+      }
       
       // Update matrix with smooth scale
       scale.setScalar(currentScales.current[i]);
@@ -153,9 +187,12 @@ export default function InstancedPoints({
       mesh.setMatrixAt(i, matrix);
     }
     
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) {
-      mesh.instanceColor.needsUpdate = true;
+    if (hasChanges || needsUpdateRef.current) {
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor && (needsUpdateRef.current || points.length < 20000)) {
+        mesh.instanceColor.needsUpdate = true;
+      }
+      needsUpdateRef.current = false;
     }
 
     // Handle hover detection

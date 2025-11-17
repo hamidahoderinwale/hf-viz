@@ -2,7 +2,7 @@
  * UV Parameterization Square - 2D projection of latent space for navigation.
  * Acts as a mini-map/control panel to navigate the 3D space.
  */
-import React, { useMemo, useRef, useEffect, useState } from 'react';
+import React, { useMemo, useRef, useEffect, useState, memo } from 'react';
 import * as d3 from 'd3';
 import { ModelPoint } from '../types';
 import { getCategoricalColorMap, getContinuousColorScale } from '../utils/colors';
@@ -18,7 +18,8 @@ interface UVProjectionSquareProps {
   currentViewCenter?: { x: number; y: number; z: number } | null;
 }
 
-export default function UVProjectionSquare({
+// Memoize to prevent unnecessary re-renders
+const UVProjectionSquare = memo(function UVProjectionSquare({
   width,
   height,
   data,

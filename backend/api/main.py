@@ -320,7 +320,18 @@ async def get_models(
         return []
     
     if max_points is not None and len(filtered_df) > max_points:
-        filtered_df = filtered_df.sample(n=max_points, random_state=42)
+        # Use stratified sampling to preserve distribution of important attributes
+        # Sample proportionally from different libraries/pipelines for better representation
+        if 'library_name' in filtered_df.columns and filtered_df['library_name'].notna().any():
+            # Stratified sampling by library
+            filtered_df = filtered_df.groupby('library_name', group_keys=False).apply(
+                lambda x: x.sample(min(len(x), max(1, int(max_points * len(x) / len(filtered_df)))), random_state=42)
+            ).reset_index(drop=True)
+            # If still too many, random sample the rest
+            if len(filtered_df) > max_points:
+                filtered_df = filtered_df.sample(n=max_points, random_state=42)
+        else:
+            filtered_df = filtered_df.sample(n=max_points, random_state=42)
     
     if embeddings is None:
         raise HTTPException(status_code=503, detail="Embeddings not loaded")
