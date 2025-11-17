@@ -5,7 +5,7 @@
 /// <reference types="@react-three/fiber" />
 import React, { useMemo, useRef, useEffect, useState, useCallback, memo } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, Grid, Line } from '@react-three/drei';
+import { OrbitControls, PerspectiveCamera, Line } from '@react-three/drei';
 import * as THREE from 'three';
 import { ModelPoint } from '../types';
 import { getCategoricalColorMap, getContinuousColorScale, getModelColor } from '../utils/colors';
@@ -624,16 +624,8 @@ function SceneContent({
       <pointLight position={[10, 10, 10]} intensity={1} />
       <pointLight position={[-10, -10, -10]} intensity={0.5} />
 
-      {/* Grid for orientation */}
-      <Grid
-        args={[10, 10]}
-        cellColor="#4a4a4a"
-        sectionColor="#6a6a6a"
-        cellThickness={0.5}
-        sectionThickness={1}
-        fadeDistance={5}
-        fadeStrength={0.5}
-      />
+      {/* Grid for orientation - using custom grid to avoid deprecation warnings */}
+      <gridHelper args={[10, 10, '#6a6a6a', '#4a4a4a']} />
 
       {/* Family tree edges with gradient and animation */}
       {familyEdges.map((edge, i) => (
