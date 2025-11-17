@@ -51,7 +51,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [colorBy, setColorBy] = useState('library_name');
   const [sizeBy, setSizeBy] = useState('downloads');
-  const [colorScheme, setColorScheme] = useState<'viridis' | 'plasma' | 'inferno' | 'magma' | 'cividis'>('viridis');
+  const [colorScheme, setColorScheme] = useState<'viridis' | 'plasma' | 'inferno' | 'magma' | 'coolwarm'>('viridis');
   const [showLegend, setShowLegend] = useState(true);
   
   const activeFilterCount = (minDownloads > 0 ? 1 : 0) + 
