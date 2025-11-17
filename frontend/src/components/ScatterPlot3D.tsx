@@ -432,7 +432,7 @@ function SceneContent({
     }
 
     return { xScale, yScale, zScale, colorScale, sizeScale, familyMap };
-  }, [sampledData, familyTree, colorBy, sizeBy]);
+  }, [sampledData, familyTree, colorBy, sizeBy, colorScheme]);
 
   // Build family edges
   const familyEdges = useMemo(() => {

@@ -37,6 +37,7 @@ export default function InstancedPoints({
       new THREE.MeshStandardMaterial({
         metalness: 0.8,
         roughness: 0.2,
+        vertexColors: true, // Enable vertex colors for per-instance coloring
       }),
     []
   );
@@ -50,6 +51,12 @@ export default function InstancedPoints({
     const color = new THREE.Color();
     const scale = new THREE.Vector3(1, 1, 1);
 
+    // Initialize instanceColor if it doesn't exist
+    if (!mesh.instanceColor) {
+      const colorArray = new Float32Array(points.length * 3);
+      mesh.instanceColor = new THREE.BufferAttribute(colorArray, 3);
+    }
+
     // Set up instances
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
@@ -58,7 +65,6 @@ export default function InstancedPoints({
 
       // Position
       matrix.setPosition(point.x, point.y, point.z);
-      mesh.setMatrixAt(i, matrix);
 
       // Color
       color.set(colors[i]);
