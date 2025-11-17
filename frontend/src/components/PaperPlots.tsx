@@ -598,10 +598,10 @@ export default function PaperPlots({ data, width = 800, height = 600 }: PaperPlo
           count: d.total_models
         })).sort((a: any, b: any) => a.date - b.date);
 
-        const extent = d3.extent(counts, (d: any) => d.date);
+        const extent = d3.extent(counts, (d: any) => d.date) as [Date | undefined, Date | undefined];
         const minDate = extent[0];
         const maxDate = extent[1];
-        if (!minDate || !maxDate || !(minDate instanceof Date) || !(maxDate instanceof Date)) return;
+        if (!minDate || !maxDate) return;
         
         const xScale = d3.scaleTime()
           .domain([minDate, maxDate])
