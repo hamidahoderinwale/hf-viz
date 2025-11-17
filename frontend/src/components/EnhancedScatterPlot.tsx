@@ -78,7 +78,7 @@ export default function EnhancedScatterPlot({
 
     // Color scale
     const isCategorical = colorBy === 'library_name' || colorBy === 'pipeline_tag';
-    let colorScale: d3.ScaleOrdinal<string, string> | d3.ScaleSequential<string, never>;
+    let colorScale: d3.ScaleOrdinal<string, string> | d3.ScaleSequential<string, never> | ((d: ModelPoint) => string);
     
     if (isCategorical) {
       const categories = Array.from(new Set(sampledData.map((d) => {
@@ -98,13 +98,12 @@ export default function EnhancedScatterPlot({
           Math.log10(extent[0] + 1),
           Math.log10(extent[1] + 1)
         ];
-        colorScale = d3.scaleSequential(d3.interpolateViridis).domain(logExtent);
+        const originalScale = d3.scaleSequential(d3.interpolateViridis).domain(logExtent);
         // Wrap to apply log transform
-        const originalScale = colorScale;
         colorScale = ((d: ModelPoint) => {
           const val = colorBy === 'downloads' ? d.downloads : d.likes;
           return originalScale(Math.log10(val + 1));
-        }) as any;
+        });
       } else {
         colorScale = d3.scaleSequential(d3.interpolateViridis).domain(extent);
       }
@@ -119,6 +118,7 @@ export default function EnhancedScatterPlot({
     const sizeExtent = d3.extent(sizeValues) as [number, number];
     // Use logarithmic scale for downloads/likes
     const useLogSize = sizeBy === 'downloads' || sizeBy === 'likes';
+    let sizeScale: d3.ScaleSqrt<number, number> | ((d: ModelPoint) => number);
     if (useLogSize) {
       const logExtent: [number, number] = [
         Math.log10(sizeExtent[0] + 1),
@@ -128,7 +128,7 @@ export default function EnhancedScatterPlot({
       sizeScale = ((d: ModelPoint) => {
         const val = sizeBy === 'downloads' ? d.downloads : d.likes;
         return logScale(Math.log10(val + 1));
-      }) as any;
+      });
     } else {
       sizeScale = d3
         .scaleSqrt()
