@@ -52,47 +52,122 @@ interface PointProps {
   onHover?: (model: ModelPoint | null) => void;
 }
 
-// Memoized Point component to prevent unnecessary re-renders
+// Memoized Point component with enhanced visual effects
 const Point = memo(function Point({ position, color, size, model, isSelected, isFamilyMember, onClick, onHover }: PointProps) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const glowRef = useRef<THREE.Mesh>(null);
+  const outlineRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
+  const { camera } = useThree();
+  
+  // Smooth size transition
+  const targetScale = useRef(size);
+  const currentScale = useRef(size);
+  
+  // Update target scale when hover/selection changes
+  useEffect(() => {
+    targetScale.current = (hovered || isSelected) ? size * 1.5 : size;
+  }, [hovered, isSelected, size]);
 
   useFrame(() => {
-    if (meshRef.current) {
-      // Subtle animation for selected/family members
-      if (isSelected || isFamilyMember) {
-        meshRef.current.rotation.y += 0.01;
+    if (!meshRef.current || !camera) return;
+    
+    // Smooth size transition using lerp
+    currentScale.current += (targetScale.current - currentScale.current) * 0.15;
+    meshRef.current.scale.setScalar(currentScale.current);
+    
+    // Calculate distance from camera for depth-based opacity
+    const distance = meshRef.current.position.distanceTo(camera.position);
+    const maxDistance = 10;
+    const minDistance = 1;
+    const distanceFactor = Math.max(0.3, Math.min(1, 1 - (distance - minDistance) / (maxDistance - minDistance)));
+    
+    // Update opacity based on distance
+    if (meshRef.current.material instanceof THREE.MeshStandardMaterial) {
+      const baseOpacity = isSelected || isFamilyMember ? 1 : hovered ? 0.95 : 0.88;
+      meshRef.current.material.opacity = baseOpacity * distanceFactor;
+    }
+    
+    // Subtle animation for selected/family members
+    if (isSelected || isFamilyMember) {
+      meshRef.current.rotation.y += 0.01;
+    }
+    
+    // Glow effect for selected/hovered points
+    if (glowRef.current) {
+      glowRef.current.scale.setScalar(currentScale.current * 1.5);
+      if (glowRef.current.material instanceof THREE.MeshStandardMaterial) {
+        glowRef.current.material.opacity = (isSelected ? 0.4 : hovered ? 0.2 : 0) * distanceFactor;
+      }
+    }
+    
+    // Outline effect
+    if (outlineRef.current) {
+      outlineRef.current.scale.setScalar(currentScale.current * 1.1);
+      if (outlineRef.current.material instanceof THREE.MeshBasicMaterial) {
+        outlineRef.current.material.opacity = (isSelected ? 0.8 : hovered ? 0.5 : 0) * distanceFactor;
       }
     }
   });
 
   return (
-    <mesh
-      ref={meshRef}
-      position={position}
-      onClick={onClick}
-      onPointerOver={() => {
-        setHovered(true);
-        if (onHover) onHover(model);
-      }}
-      onPointerOut={() => {
-        setHovered(false);
-        if (onHover) onHover(null);
-      }}
-      scale={hovered || isSelected ? size * 1.5 : size}
-      frustumCulled={true} // Only render if in view frustum
-    >
-      <sphereGeometry args={[0.02, 8, 8]} /> {/* Reduced geometry complexity */}
-      <meshStandardMaterial
-        color={isSelected ? '#ffffff' : isFamilyMember ? '#4a4a4a' : color}
-        emissive={isSelected ? '#ffffff' : isFamilyMember ? '#6a6a6a' : '#000000'}
-        emissiveIntensity={isSelected ? 0.5 : isFamilyMember ? 0.2 : 0}
-        metalness={0.8}
-        roughness={0.2}
-        opacity={isSelected || isFamilyMember ? 1 : hovered ? 0.95 : 0.75}  // Increased opacity for better visibility
-        transparent
-      />
-    </mesh>
+    <group>
+      {/* Glow effect */}
+      {(isSelected || hovered) && (
+        <mesh ref={glowRef} position={position}>
+          <sphereGeometry args={[0.02, 16, 16]} />
+          <meshStandardMaterial
+            color={isSelected ? '#ffffff' : color}
+            emissive={isSelected ? '#ffffff' : color}
+            emissiveIntensity={1}
+            transparent
+            opacity={0}
+            side={THREE.BackSide}
+          />
+        </mesh>
+      )}
+      
+      {/* Outline effect */}
+      {(isSelected || hovered) && (
+        <mesh ref={outlineRef} position={position}>
+          <sphereGeometry args={[0.02, 16, 16]} />
+          <meshBasicMaterial
+            color={isSelected ? '#ffffff' : '#ffffff'}
+            transparent
+            opacity={0}
+            side={THREE.BackSide}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
+      
+      {/* Main point */}
+      <mesh
+        ref={meshRef}
+        position={position}
+        onClick={onClick}
+        onPointerOver={() => {
+          setHovered(true);
+          if (onHover) onHover(model);
+        }}
+        onPointerOut={() => {
+          setHovered(false);
+          if (onHover) onHover(null);
+        }}
+        frustumCulled={true}
+      >
+        <sphereGeometry args={[0.02, 12, 12]} />
+        <meshStandardMaterial
+          color={isSelected ? '#ffffff' : isFamilyMember ? '#4a4a4a' : color}
+          emissive={isSelected ? '#ffffff' : isFamilyMember ? '#6a6a6a' : '#000000'}
+          emissiveIntensity={isSelected ? 0.6 : isFamilyMember ? 0.2 : 0}
+          metalness={0.8}
+          roughness={0.2}
+          opacity={0.88}
+          transparent
+        />
+      </mesh>
+    </group>
   );
 }, (prevProps, nextProps) => {
   // Custom comparison function for memo
@@ -111,18 +186,91 @@ const Point = memo(function Point({ position, color, size, model, isSelected, is
 interface FamilyEdgeProps {
   start: [number, number, number];
   end: [number, number, number];
-  color: string;
+  parentColor: string;
+  childColor: string;
+  depth: number;
 }
 
-function FamilyEdge({ start, end, color }: FamilyEdgeProps) {
+function FamilyEdge({ start, end, parentColor, childColor, depth }: FamilyEdgeProps) {
   const points = useMemo(() => [new THREE.Vector3(...start), new THREE.Vector3(...end)], [start, end]);
+  const lineRef = useRef<THREE.Line>(null);
+  const flowRef = useRef<THREE.Mesh>(null);
+  const flowProgress = useRef(0);
+  
+  // Create gradient material
+  const gradientMaterial = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 1;
+    const ctx = canvas.getContext('2d')!;
+    const gradient = ctx.createLinearGradient(0, 0, 256, 0);
+    
+    // Color based on depth - deeper = more saturated
+    const depthFactor = Math.min(depth / 5, 1);
+    const baseHue = 200 + depth * 20; // Blue to purple gradient
+    const parentH = baseHue;
+    const childH = baseHue + 30;
+    
+    gradient.addColorStop(0, parentColor);
+    gradient.addColorStop(1, childColor);
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 256, 1);
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    
+    return new THREE.LineBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 0.7 + depthFactor * 0.3,
+      linewidth: 3 + depth * 0.5, // Thicker for deeper levels
+    });
+  }, [parentColor, childColor, depth]);
+  
+  // Animated flow along edge
+  useFrame((state, delta) => {
+    if (!flowRef.current) return;
+    
+    flowProgress.current += delta * 0.5; // Flow speed
+    if (flowProgress.current > 1) flowProgress.current = 0;
+    
+    // Position flow particle along the edge
+    const startVec = new THREE.Vector3(...start);
+    const endVec = new THREE.Vector3(...end);
+    const direction = new THREE.Vector3().subVectors(endVec, startVec);
+    const position = new THREE.Vector3().addVectors(startVec, direction.multiplyScalar(flowProgress.current));
+    
+    flowRef.current.position.copy(position);
+    
+    // Pulse effect
+    const pulse = Math.sin(flowProgress.current * Math.PI * 2) * 0.3 + 0.7;
+    flowRef.current.scale.setScalar(pulse);
+  });
+  
   return (
-    <Line
-      points={points}
-      color={color}
-      lineWidth={2}  // Increased from 1 to 2 for better visibility
-      dashed={false}
-    />
+    <group>
+      {/* Main gradient edge */}
+      <Line
+        ref={lineRef}
+        points={points}
+        color={parentColor}
+        lineWidth={3 + depth * 0.5}
+        dashed={false}
+      >
+        <primitive object={gradientMaterial} attach="material" />
+      </Line>
+      
+      {/* Animated flow particle */}
+      <mesh ref={flowRef} position={start}>
+        <sphereGeometry args={[0.015, 8, 8]} />
+        <meshBasicMaterial
+          color={childColor}
+          transparent
+          opacity={0.8}
+        />
+      </mesh>
+    </group>
   );
 }
 
@@ -434,26 +582,47 @@ function SceneContent({
     return { xScale, yScale, zScale, colorScale, sizeScale, familyMap };
   }, [sampledData, familyTree, colorBy, sizeBy, colorScheme]);
 
-  // Build family edges
+  // Build family edges with color coding by depth
   const familyEdges = useMemo(() => {
     if (!familyTree || familyTree.length === 0) return [];
     
-    const edges: Array<{ start: [number, number, number]; end: [number, number, number]; model: ModelPoint }> = [];
+    const edges: Array<{ 
+      start: [number, number, number]; 
+      end: [number, number, number]; 
+      model: ModelPoint;
+      parentColor: string;
+      childColor: string;
+      depth: number;
+    }> = [];
     const modelMap = new Map(familyTree.map(m => [m.model_id, m]));
+    
+    // Get color scale for family depth
+    const maxDepth = Math.max(...familyTree.map(m => m.family_depth ?? 0), 1);
+    const depthColorScale = getContinuousColorScale(0, maxDepth, colorScheme);
 
     familyTree.forEach(model => {
       if (model.parent_model && modelMap.has(model.parent_model)) {
         const parent = modelMap.get(model.parent_model)!;
+        const parentDepth = parent.family_depth ?? 0;
+        const childDepth = model.family_depth ?? 0;
+        
+        // Color based on depth - parent to child gradient
+        const parentColor = depthColorScale(parentDepth);
+        const childColor = depthColorScale(childDepth);
+        
         edges.push({
           start: [xScale(parent.x), yScale(parent.y), zScale(parent.z)],
           end: [xScale(model.x), yScale(model.y), zScale(model.z)],
           model,
+          parentColor,
+          childColor,
+          depth: childDepth,
         });
       }
     });
 
     return edges;
-  }, [familyTree, xScale, yScale, zScale]);
+  }, [familyTree, xScale, yScale, zScale, colorScheme]);
 
   return (
     <>
@@ -472,13 +641,15 @@ function SceneContent({
         fadeStrength={0.5}
       />
 
-      {/* Family tree edges */}
+      {/* Family tree edges with gradient and animation */}
       {familyEdges.map((edge, i) => (
         <FamilyEdge
-          key={i}
+          key={`${edge.model.model_id}-${i}`}
           start={edge.start}
           end={edge.end}
-          color="#8a8a8a"
+          parentColor={edge.parentColor}
+          childColor={edge.childColor}
+          depth={edge.depth}
         />
       ))}
 
