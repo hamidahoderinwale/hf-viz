@@ -92,20 +92,49 @@ export default function EnhancedScatterPlot({
         return d.likes;
       });
       const extent = d3.extent(values) as [number, number];
-      colorScale = d3.scaleSequential(d3.interpolateViridis).domain(extent);
+      // Use logarithmic scale for downloads/likes (heavily skewed distributions)
+      if (colorBy === 'downloads' || colorBy === 'likes') {
+        const logExtent: [number, number] = [
+          Math.log10(extent[0] + 1),
+          Math.log10(extent[1] + 1)
+        ];
+        colorScale = d3.scaleSequential(d3.interpolateViridis).domain(logExtent);
+        // Wrap to apply log transform
+        const originalScale = colorScale;
+        colorScale = ((d: ModelPoint) => {
+          const val = colorBy === 'downloads' ? d.downloads : d.likes;
+          return originalScale(Math.log10(val + 1));
+        }) as any;
+      } else {
+        colorScale = d3.scaleSequential(d3.interpolateViridis).domain(extent);
+      }
     }
 
-    // Size scale
+    // Size scale with logarithmic scaling for better representation of skewed distributions
     const sizeValues = sampledData.map((d) => {
       if (sizeBy === 'downloads') return d.downloads;
       if (sizeBy === 'likes') return d.likes;
       return 10;
     });
     const sizeExtent = d3.extent(sizeValues) as [number, number];
-    const sizeScale = d3
-      .scaleSqrt()
-      .domain(sizeExtent)
-      .range([3, 20]);
+    // Use logarithmic scale for downloads/likes
+    const useLogSize = sizeBy === 'downloads' || sizeBy === 'likes';
+    if (useLogSize) {
+      const logExtent: [number, number] = [
+        Math.log10(sizeExtent[0] + 1),
+        Math.log10(sizeExtent[1] + 1)
+      ];
+      const logScale = d3.scaleLinear().domain(logExtent).range([3, 20]);
+      sizeScale = ((d: ModelPoint) => {
+        const val = sizeBy === 'downloads' ? d.downloads : d.likes;
+        return logScale(Math.log10(val + 1));
+      }) as any;
+    } else {
+      sizeScale = d3
+        .scaleSqrt()
+        .domain(sizeExtent)
+        .range([3, 20]);
+    }
 
     return { xScaleBase, yScaleBase, colorScale, sizeScale };
   }, [sampledData, width, height, margin, colorBy, sizeBy]);

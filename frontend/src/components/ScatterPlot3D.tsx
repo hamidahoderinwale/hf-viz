@@ -577,9 +577,6 @@ function SceneContent({
       }
       // Scale from 0.5 to 3.0 for better visibility
       return 0.5 + Math.max(0, Math.min(1, normalizedSize)) * 2.5;
-    }; {
-      const val = sizeBy === 'downloads' ? d.downloads : sizeBy === 'likes' ? d.likes : 1;
-      return 0.5 + ((val - sizeMin) / sizeRange) * 1.5; // 0.5 to 2.0 scale
     };
 
     // Family map
