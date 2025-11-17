@@ -518,6 +518,8 @@ export default function PaperPlots({ data, width = 800, height = 600 }: PaperPlo
       const x = xScale(depth.toString());
       const bandWidth = xScale.bandwidth();
 
+      if (x === undefined) return;
+
       // Simple box plot
       const sorted = lengths.sort((a, b) => a - b);
       const q1 = d3.quantile(sorted, 0.25) || 0;
