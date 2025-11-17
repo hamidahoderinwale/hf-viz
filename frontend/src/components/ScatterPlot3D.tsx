@@ -193,40 +193,21 @@ interface FamilyEdgeProps {
 
 function FamilyEdge({ start, end, parentColor, childColor, depth }: FamilyEdgeProps) {
   const points = useMemo(() => [new THREE.Vector3(...start), new THREE.Vector3(...end)], [start, end]);
-  const lineRef = useRef<THREE.Line>(null);
   const flowRef = useRef<THREE.Mesh>(null);
   const flowProgress = useRef(0);
   
-  // Create gradient material
-  const gradientMaterial = useMemo(() => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 1;
-    const ctx = canvas.getContext('2d')!;
-    const gradient = ctx.createLinearGradient(0, 0, 256, 0);
-    
-    // Color based on depth - deeper = more saturated
-    const depthFactor = Math.min(depth / 5, 1);
-    const baseHue = 200 + depth * 20; // Blue to purple gradient
-    const parentH = baseHue;
-    const childH = baseHue + 30;
-    
-    gradient.addColorStop(0, parentColor);
-    gradient.addColorStop(1, childColor);
-    
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 256, 1);
-    
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.needsUpdate = true;
-    
-    return new THREE.LineBasicMaterial({
-      map: texture,
-      transparent: true,
-      opacity: 0.7 + depthFactor * 0.3,
-      linewidth: 3 + depth * 0.5, // Thicker for deeper levels
-    });
-  }, [parentColor, childColor, depth]);
+  // Interpolate color between parent and child for gradient effect
+  const interpolatedColor = useMemo(() => {
+    const parent = new THREE.Color(parentColor);
+    const child = new THREE.Color(childColor);
+    const mid = new THREE.Color().lerpColors(parent, child, 0.5);
+    return `#${mid.getHexString()}`;
+  }, [parentColor, childColor]);
+  
+  // Depth-based opacity and thickness
+  const depthFactor = Math.min(depth / 5, 1);
+  const opacity = 0.6 + depthFactor * 0.4;
+  const lineWidth = 2.5 + depth * 0.4;
   
   // Animated flow along edge
   useFrame((state, delta) => {
@@ -250,18 +231,15 @@ function FamilyEdge({ start, end, parentColor, childColor, depth }: FamilyEdgePr
   
   return (
     <group>
-      {/* Main gradient edge - use LineBasicMaterial with gradient texture */}
-      <line ref={lineRef}>
-        <bufferGeometry>
-          <bufferAttribute
-            attach="attributes-position"
-            count={points.length}
-            array={new Float32Array(points.flatMap(p => [p.x, p.y, p.z]))}
-            itemSize={3}
-          />
-        </bufferGeometry>
-        <primitive object={gradientMaterial} attach="material" />
-      </line>
+      {/* Main edge with interpolated color - thicker and more visible */}
+      <Line
+        points={points}
+        color={interpolatedColor}
+        lineWidth={lineWidth}
+        dashed={false}
+        transparent
+        opacity={opacity}
+      />
       
       {/* Animated flow particle */}
       <mesh ref={flowRef} position={start}>
