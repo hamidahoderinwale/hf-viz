@@ -67,29 +67,34 @@ class IndexedDBCache {
   async set<T>(storeName: string, key: string, data: T): Promise<void> {
     const store = await this.getStore(storeName);
     
-    // Enforce cache size limit
+    // Enforce cache size limit - delete oldest entries if at limit
     const count = await this.getCacheSize(storeName);
     if (count >= MAX_CACHE_SIZE) {
-      // Delete oldest entries (simple FIFO - delete first entry)
-      const transaction = store.transaction;
-      const clearRequest = store.clear();
+      // Get all entries, sort by timestamp, delete oldest
+      const allEntries: Array<{ key: string; timestamp: number }> = [];
+      const getAllRequest = store.openCursor();
+      
       await new Promise<void>((resolve, reject) => {
-        clearRequest.onsuccess = () => resolve();
-        clearRequest.onerror = () => reject(clearRequest.error);
+        getAllRequest.onsuccess = (event: any) => {
+          const cursor = event.target.result;
+          if (cursor) {
+            const entry = cursor.value as CacheEntry<T>;
+            allEntries.push({ key: entry.key, timestamp: entry.timestamp });
+            cursor.continue();
+          } else {
+            resolve();
+          }
+        };
+        getAllRequest.onerror = () => reject(getAllRequest.error);
       });
-      // Re-get store after clear
-      const newStore = await this.getStore(storeName);
-      const entry: CacheEntry<T> = {
-        key,
-        data,
-        timestamp: Date.now(),
-        version: CACHE_VERSION,
-      };
-      return new Promise((resolve, reject) => {
-        const request = newStore.put(entry);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-      });
+      
+      // Sort by timestamp (oldest first) and delete excess
+      allEntries.sort((a, b) => a.timestamp - b.timestamp);
+      const toDelete = allEntries.slice(0, count - MAX_CACHE_SIZE + 1);
+      
+      for (const entry of toDelete) {
+        await this.delete(storeName, entry.key);
+      }
     }
     
     const entry: CacheEntry<T> = {
