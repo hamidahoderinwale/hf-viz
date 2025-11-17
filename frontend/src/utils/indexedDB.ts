@@ -14,6 +14,8 @@ interface CacheEntry<T> {
 }
 
 const CACHE_VERSION = '1.0.0'; // Increment to invalidate old cache
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const MAX_CACHE_SIZE = 100; // Maximum number of entries per store
 
 class IndexedDBCache {
   private db: IDBDatabase | null = null;
@@ -64,6 +66,32 @@ class IndexedDBCache {
 
   async set<T>(storeName: string, key: string, data: T): Promise<void> {
     const store = await this.getStore(storeName);
+    
+    // Enforce cache size limit
+    const count = await this.getCacheSize(storeName);
+    if (count >= MAX_CACHE_SIZE) {
+      // Delete oldest entries (simple FIFO - delete first entry)
+      const transaction = store.transaction;
+      const clearRequest = store.clear();
+      await new Promise<void>((resolve, reject) => {
+        clearRequest.onsuccess = () => resolve();
+        clearRequest.onerror = () => reject(clearRequest.error);
+      });
+      // Re-get store after clear
+      const newStore = await this.getStore(storeName);
+      const entry: CacheEntry<T> = {
+        key,
+        data,
+        timestamp: Date.now(),
+        version: CACHE_VERSION,
+      };
+      return new Promise((resolve, reject) => {
+        const request = newStore.put(entry);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      });
+    }
+    
     const entry: CacheEntry<T> = {
       key,
       data,
@@ -93,6 +121,15 @@ class IndexedDBCache {
         // Check version
         if (entry.version !== CACHE_VERSION) {
           // Version mismatch, delete old entry
+          store.delete(key);
+          resolve(null);
+          return;
+        }
+
+        // Check TTL
+        const age = Date.now() - entry.timestamp;
+        if (age > CACHE_TTL_MS) {
+          // Cache expired, delete old entry
           store.delete(key);
           resolve(null);
           return;

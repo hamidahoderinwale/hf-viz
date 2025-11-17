@@ -101,6 +101,8 @@ function App() {
       const cachedModels = await cache.getCachedModels(cacheKey);
       if (cachedModels) {
         setData(cachedModels);
+        // Set filteredCount to models length when using cache (best approximation)
+        setFilteredCount(cachedModels.length);
         setLoading(false);
         return;
       }

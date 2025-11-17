@@ -39,16 +39,6 @@ interface PointProps {
   isSelected: boolean;
   isFamilyMember: boolean;
   onClick: () => void;
-}
-
-interface PointProps {
-  position: [number, number, number];
-  color: string;
-  size: number;
-  model: ModelPoint;
-  isSelected: boolean;
-  isFamilyMember: boolean;
-  onClick: () => void;
   onHover?: (model: ModelPoint | null, pointer?: { x: number; y: number }) => void;
 }
 
