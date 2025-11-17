@@ -250,16 +250,18 @@ function FamilyEdge({ start, end, parentColor, childColor, depth }: FamilyEdgePr
   
   return (
     <group>
-      {/* Main gradient edge */}
-      <Line
-        ref={lineRef}
-        points={points}
-        color={parentColor}
-        lineWidth={3 + depth * 0.5}
-        dashed={false}
-      >
+      {/* Main gradient edge - use LineBasicMaterial with gradient texture */}
+      <line ref={lineRef}>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            count={points.length}
+            array={new Float32Array(points.flatMap(p => [p.x, p.y, p.z]))}
+            itemSize={3}
+          />
+        </bufferGeometry>
         <primitive object={gradientMaterial} attach="material" />
-      </Line>
+      </line>
       
       {/* Animated flow particle */}
       <mesh ref={flowRef} position={start}>
