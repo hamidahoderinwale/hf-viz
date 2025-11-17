@@ -4,7 +4,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -23,16 +23,20 @@
 }
 
 .modal-content {
-  background: white;
-  border-radius: 12px;
-  max-width: 600px;
+  background: #ffffff;
+  border-radius: 8px;
+  max-width: 800px;
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
-  padding: 2rem;
+  padding: 0;
   position: relative;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  border: 1px solid #d0d0d0;
   animation: slideUp 0.3s ease-out;
+  font-family: 'Vend Sans', sans-serif;
+  display: flex;
+  flex-direction: column;
 }
 
 @keyframes slideUp {
@@ -51,31 +55,221 @@
   top: 1rem;
   right: 1rem;
   background: none;
-  border: none;
-  font-size: 2rem;
+  border: 1px solid #d0d0d0;
+  font-size: 0.85rem;
   line-height: 1;
   cursor: pointer;
-  color: #666;
-  padding: 0;
-  width: 32px;
-  height: 32px;
+  color: #6a6a6a;
+  padding: 0.4rem 0.8rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: 2px;
   transition: all 0.2s;
+  font-family: 'Vend Sans', sans-serif;
 }
 
 .modal-close:hover {
   background: #f0f0f0;
-  color: #000;
+  color: #1a1a1a;
+}
+
+.modal-header {
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  background: #fafafa;
 }
 
 .modal-content h2 {
-  margin: 0 0 1.5rem 0;
+  margin: 0;
   font-size: 1.5rem;
-  color: #333;
+  color: #1a1a1a;
   word-break: break-word;
+  font-family: 'Vend Sans', sans-serif;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.modal-body {
+  padding: 1.5rem 2rem;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.action-btn {
+  padding: 0.5rem 1rem;
+  background: #6a6a6a;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: 'Vend Sans', sans-serif;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.action-btn:hover {
+  background: #4a4a4a;
+  transform: translateY(-1px);
+}
+
+.action-btn.active {
+  background: #4a4a4a;
+}
+
+.modal-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.modal-tab {
+  padding: 0.75rem 1.5rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-family: 'Vend Sans', sans-serif;
+  color: #666;
+  font-weight: 500;
+  margin-bottom: -2px;
+  transition: all 0.2s;
+}
+
+.modal-tab:hover {
+  color: #1a1a1a;
+  background: #f5f5f5;
+}
+
+.modal-tab.active {
+  color: #1a1a1a;
+  border-bottom-color: #1a1a1a;
+  font-weight: 600;
+}
+
+.modal-info-section {
+  min-height: 200px;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.info-label {
+  font-size: 0.8rem;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  font-family: 'Vend Sans', sans-serif;
+}
+
+.info-value {
+  font-size: 1.1rem;
+  color: #1a1a1a;
+  font-weight: 500;
+  font-family: 'Vend Sans', sans-serif;
+}
+
+.info-value.highlight {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.info-value.colored {
+  font-size: 1.1rem;
+}
+
+.info-value.coordinates {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.95rem;
+  font-family: 'Monaco', 'Menlo', monospace;
+  color: #4a4a4a;
+}
+
+.info-section {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: #fafafa;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+}
+
+.section-title {
+  font-size: 0.85rem;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  font-family: 'Vend Sans', sans-serif;
+}
+
+.section-content {
+  font-size: 0.95rem;
+  color: #1a1a1a;
+  line-height: 1.6;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tag {
+  display: inline-block;
+  padding: 0.35rem 0.75rem;
+  background: #e8f4f8;
+  color: #1a1a1a;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border: 1px solid #c8e6c9;
+}
+
+.tag.license-tag {
+  background: #fff3e0;
+  border-color: #ffcc80;
+}
+
+.model-link {
+  color: #4a90e2;
+  text-decoration: none;
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.model-link:hover {
+  text-decoration: underline;
 }
 
 .modal-section {
@@ -90,9 +284,10 @@
   margin: 0 0 0.75rem 0;
   font-size: 1rem;
   font-weight: 600;
-  color: #555;
+  color: #4a4a4a;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  font-family: 'Vend Sans', sans-serif;
 }
 
 .modal-info-grid {
@@ -109,24 +304,35 @@
 
 .modal-info-item strong {
   font-size: 0.875rem;
-  color: #666;
+  color: #6a6a6a;
   font-weight: 500;
+  font-family: 'Vend Sans', sans-serif;
 }
 
 .modal-info-item span {
   font-size: 1rem;
-  color: #333;
+  color: #1a1a1a;
   font-weight: 500;
+  font-family: 'Vend Sans', sans-serif;
 }
 
 .modal-tags {
   margin: 0;
   padding: 0.75rem;
   background: #f5f5f5;
-  border-radius: 6px;
-  color: #333;
+  border-radius: 2px;
+  color: #1a1a1a;
   font-size: 0.9rem;
   line-height: 1.5;
+  font-family: 'Vend Sans', sans-serif;
+}
+
+.modal-footer {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: center;
 }
 
 .modal-link {
@@ -134,28 +340,165 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1.5rem;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: #1a1a1a;
+  color: #ffffff;
   text-decoration: none;
-  border-radius: 6px;
+  border-radius: 4px;
   font-weight: 500;
+  font-family: 'Vend Sans', sans-serif;
   transition: all 0.2s;
-  margin-top: 0.5rem;
+  border: 1px solid #1a1a1a;
 }
 
 .modal-link:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  background: #4a4a4a;
+  border-color: #4a4a4a;
+  transform: translateY(-1px);
 }
 
 @media (max-width: 768px) {
   .modal-content {
-    padding: 1.5rem;
     max-width: 100%;
+    margin: 1rem;
   }
 
-  .modal-info-grid {
+  .modal-header {
+    padding: 1rem 1.5rem;
+  }
+
+  .modal-body {
+    padding: 1rem 1.5rem;
+  }
+
+  .info-grid {
     grid-template-columns: 1fr;
   }
+
+  .modal-tabs {
+    overflow-x: auto;
+  }
+}
+
+/* Papers Section */
+.papers-loading,
+.papers-error,
+.papers-empty {
+  text-align: center;
+  padding: 2rem;
+  color: #666;
+}
+
+.papers-error {
+  color: #d32f2f;
+  background: #ffebee;
+  border-radius: 4px;
+  padding: 1rem;
+}
+
+.papers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.paper-card {
+  background: #f9f9f9;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 1.5rem;
+  transition: box-shadow 0.2s;
+}
+
+.paper-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.paper-header {
+  margin-bottom: 1rem;
+}
+
+.paper-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.25rem;
+  line-height: 1.4;
+}
+
+.paper-link {
+  color: #1976d2;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.paper-link:hover {
+  color: #1565c0;
+  text-decoration: underline;
+}
+
+.paper-id {
+  font-size: 0.875rem;
+  color: #666;
+}
+
+.arxiv-link {
+  color: #b31b1b;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.arxiv-link:hover {
+  color: #8b0000;
+  text-decoration: underline;
+}
+
+.paper-authors,
+.paper-date,
+.paper-categories {
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.paper-authors strong,
+.paper-date strong,
+.paper-categories strong {
+  color: #333;
+  margin-right: 0.5rem;
+}
+
+.paper-categories {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.category-tag {
+  background: #e3f2fd;
+  color: #1976d2;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.paper-abstract {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e0e0e0;
+}
+
+.paper-abstract strong {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #333;
+  font-size: 0.95rem;
+}
+
+.paper-abstract p {
+  margin: 0;
+  line-height: 1.6;
+  color: #555;
+  text-align: justify;
 }
 

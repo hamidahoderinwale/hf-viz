@@ -25,15 +25,12 @@ class ModelDataLoader:
         Returns:
             DataFrame with model data
         """
-        print(f"Loading dataset {self.dataset_name}...")
         dataset = load_dataset(self.dataset_name, split=split)
         
         if sample_size and len(dataset) > sample_size:
-            print(f"Sampling {sample_size} models from {len(dataset)} total...")
             dataset = dataset.shuffle(seed=42).select(range(sample_size))
         
         self.df = dataset.to_pandas()
-        print(f"Loaded {len(self.df)} models")
         
         return self.df
     
@@ -97,24 +94,28 @@ class ModelDataLoader:
         else:
             df = df.copy()
         
+        # Optimized filtering with vectorized operations
         if min_downloads is not None:
-            df = df[df.get('downloads', 0) >= min_downloads]
+            downloads_col = df.get('downloads', pd.Series([0] * len(df), index=df.index))
+            df = df[downloads_col >= min_downloads]
         
         if min_likes is not None:
-            df = df[df.get('likes', 0) >= min_likes]
+            likes_col = df.get('likes', pd.Series([0] * len(df), index=df.index))
+            df = df[likes_col >= min_likes]
         
         if libraries:
-            df = df[df.get('library_name', '').isin(libraries)]
+            library_col = df.get('library_name', pd.Series([''] * len(df), index=df.index))
+            df = df[library_col.isin(libraries)]
         
         if pipeline_tags:
-            df = df[df.get('pipeline_tag', '').isin(pipeline_tags)]
+            pipeline_col = df.get('pipeline_tag', pd.Series([''] * len(df), index=df.index))
+            df = df[pipeline_col.isin(pipeline_tags)]
         
         if search_query:
             query_lower = search_query.lower()
-            mask = (
-                df.get('model_id', '').astype(str).str.lower().str.contains(query_lower) |
-                df.get('tags', '').astype(str).str.lower().str.contains(query_lower)
-            )
+            model_id_col = df.get('model_id', '').astype(str).str.lower()
+            tags_col = df.get('tags', '').astype(str).str.lower()
+            mask = model_id_col.str.contains(query_lower, na=False) | tags_col.str.contains(query_lower, na=False)
             df = df[mask]
         
         return df

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: hf-viz-backend
+    env: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && python api.py
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: FRONTEND_URL
+        sync: false  # Set this to your Netlify frontend URL
+    plan: starter  # Adjust based on your needs (starter, standard, pro)
+    region: oregon  # Choose your preferred region
+    healthCheckPath: /
+

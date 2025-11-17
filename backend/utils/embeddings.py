@@ -22,14 +22,12 @@ class ModelEmbedder:
         """
         self.model_name = model_name
         self.cache_dir = cache_dir
-        print(f"Loading embedding model: {model_name}...")
         self.model = SentenceTransformer(model_name)
-        print("Embedding model loaded!")
     
     def generate_embeddings(
         self,
         texts: List[str],
-        batch_size: int = 32,
+        batch_size: int = 128,  # Increased default batch size for speed
         show_progress: bool = True
     ) -> np.ndarray:
         """
@@ -43,9 +41,6 @@ class ModelEmbedder:
         Returns:
             numpy array of embeddings (n_samples, embedding_dim)
         """
-        if show_progress:
-            print(f"Generating embeddings for {len(texts)} models...")
-        
         embeddings = self.model.encode(
             texts,
             batch_size=batch_size,
@@ -60,12 +55,10 @@ class ModelEmbedder:
         os.makedirs(os.path.dirname(filepath) if os.path.dirname(filepath) else '.', exist_ok=True)
         with open(filepath, 'wb') as f:
             pickle.dump(embeddings, f)
-        print(f"Embeddings saved to {filepath}")
     
     def load_embeddings(self, filepath: str) -> np.ndarray:
         """Load embeddings from disk."""
         with open(filepath, 'rb') as f:
             embeddings = pickle.load(f)
-        print(f"Embeddings loaded from {filepath}")
         return embeddings
 

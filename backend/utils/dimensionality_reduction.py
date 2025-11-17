@@ -26,10 +26,11 @@ class DimensionReducer:
         if self.method == "umap":
             self.reducer = UMAP(
                 n_components=n_components,
-                n_neighbors=15,
-                min_dist=0.1,
+                n_neighbors=30,  # Increased from 15 to preserve more global structure
+                min_dist=0.3,    # Increased from 0.1 to spread points out more, revealing structure
                 metric='cosine',
-                random_state=42
+                random_state=42,
+                spread=1.5       # Better separation between clusters
             )
         elif self.method == "tsne":
             self.reducer = TSNE(
@@ -51,9 +52,7 @@ class DimensionReducer:
         Returns:
             Reduced embeddings (n_samples, n_components)
         """
-        print(f"Reducing dimensions using {self.method.upper()}...")
         reduced = self.reducer.fit_transform(embeddings)
-        print(f"Reduced to {self.n_components}D: shape {reduced.shape}")
         return reduced
     
     def transform(self, embeddings: np.ndarray) -> np.ndarray:
@@ -68,11 +67,9 @@ class DimensionReducer:
         os.makedirs(os.path.dirname(filepath) if os.path.dirname(filepath) else '.', exist_ok=True)
         with open(filepath, 'wb') as f:
             pickle.dump(self.reducer, f)
-        print(f"Reducer saved to {filepath}")
     
     def load_reducer(self, filepath: str):
         """Load fitted reducer from disk."""
         with open(filepath, 'rb') as f:
             self.reducer = pickle.load(f)
-        print(f"Reducer loaded from {filepath}")
 

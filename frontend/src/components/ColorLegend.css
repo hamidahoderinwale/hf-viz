@@ -1,0 +1,116 @@
+.color-legend {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 0.75rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  font-size: 0.875rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.legend-top-right {
+  top: 10px;
+  right: 10px;
+}
+
+.legend-top-left {
+  top: 10px;
+  left: 10px;
+}
+
+.legend-bottom-right {
+  bottom: 10px;
+  right: 10px;
+}
+
+.legend-bottom-left {
+  bottom: 10px;
+  left: 10px;
+}
+
+.legend-header {
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #e0e0e0;
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.legend-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.legend-categorical {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+
+.legend-color {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid #ccc;
+  flex-shrink: 0;
+}
+
+.legend-label {
+  color: #555;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.legend-continuous {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.legend-gradient {
+  display: flex;
+  height: 20px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid #ccc;
+}
+
+.legend-gradient-segment {
+  flex: 1;
+  height: 100%;
+}
+
+.legend-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #666;
+}
+
+@media (max-width: 768px) {
+  .color-legend {
+    font-size: 0.75rem;
+    padding: 0.5rem;
+    max-width: 150px;
+  }
+
+  .legend-label {
+    font-size: 0.7rem;
+  }
+}
+

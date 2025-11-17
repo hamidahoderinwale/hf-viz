@@ -12,53 +12,157 @@ Many have observed that the development and deployment of generative machine lea
 
 This interactive latent space navigator visualizes ~1.84M models from the [modelbiome/ai_ecosystem_withmodelcards](https://huggingface.co/datasets/modelbiome/ai_ecosystem_withmodelcards) dataset in a 2D space where similar models appear closer together, allowing you to explore the relationships and family structures described in the paper.
 
+**Resources:**
+- **GitHub Repository**: [bendlaufer/ai-ecosystem](https://github.com/bendlaufer/ai-ecosystem) - Original research repository with analysis notebooks and datasets
+- **Hugging Face Project**: [modelbiome](https://huggingface.co/modelbiome) - Dataset and project page on Hugging Face Hub
+
+## Project Structure
+
+```
+hf_viz/
+├── backend/              # FastAPI backend
+│   ├── api/             # API routes (main.py)
+│   ├── services/        # External services (arXiv, model tracking, scheduler)
+│   ├── utils/           # Utility modules (data loading, embeddings, etc.)
+│   ├── config/          # Configuration files
+│   └── cache/           # Backend cache directory
+├── frontend/            # React frontend
+│   ├── src/
+│   │   ├── components/  # React components
+│   │   ├── utils/       # Frontend utilities
+│   │   └── workers/     # Web Workers
+│   └── public/          # Static assets
+├── cache/               # Shared cache directory
+├── deploy/              # Deployment configuration files
+└── netlify-functions/   # Netlify serverless functions
+```
+
 ## Features
 
-- **Latent Space Visualization**: 2D embedding visualization showing model relationships
-- **Interactive Exploration**: Hover, click, and zoom to explore models
-- **Smart Filtering**: Filter by library, pipeline tag, popularity, and more
-- **Color & Size Encoding**: Visualize different attributes through color and size
-- **Caching**: Efficient caching of embeddings and reduced dimensions
-- **Performance Optimized**: Handles large datasets through smart sampling
+### 3D Latent Space Visualization
+
+- **Interactive 3D Scatter Plot** (Three.js/React Three Fiber):
+  - Navigate 1.84M+ models in 3D space
+  - Spatial sparsity filtering for better navigability
+  - Frustum culling and adaptive sampling for performance
+  - Instanced rendering for large datasets
+  - Family tree visualization with connecting edges
+  - Multiple color encoding options (library, pipeline, cluster, family depth, popularity)
+  - Dynamic size encoding based on downloads/likes
+  - Smooth camera animations
+  - UV projection minimap for navigation
+
+### 2D Visualizations (D3.js)
+
+- **Enhanced Scatter Plot**: 
+  - Brush selection for multi-model selection
+  - Real-time tooltips with model details
+  - Dynamic color and size encoding
+  - Interactive zoom and pan
+  - Click to view model details modal
+
+- **Network Graph**: 
+  - Force-directed layout showing model relationships
+  - Connectivity based on latent space similarity
+  - Draggable nodes
+  - Color-coded by library
+  - Node size based on popularity
+
+- **Histograms**: 
+  - Distribution analysis of downloads, likes, trending scores
+  - Interactive bars with hover details
+  - Dynamic attribute selection
+
+- **UV Projection Minimap**:
+  - 2D projection of 3D latent space (XY plane)
+  - Click to navigate 3D view to specific regions
+  - Shows current view center
+
+### Advanced Features
+
+- **Semantic Similarity Search**: Find models similar to a query model using embeddings
+- **Base Models Filter**: View only root models (no parent) to see the base of family trees
+- **Family Tree Visualization**: Click any model to see its family tree with parent-child relationships
+- **Clustering**: Automatic K-means clustering reveals semantic groups
+- **Model Details Modal**: 
+  - Comprehensive model information
+  - File tree browser
+  - Color-coded tags and licenses
+  - Links to Hugging Face Hub
+
+### Model Tracking & Analytics
+
+- **Live Model Count Tracking**: Track the number of models on Hugging Face Hub over time
+- **Growth Statistics**: Calculate growth rates, daily averages, and trends
+- **Historical Data**: Query historical model counts with breakdowns by library and pipeline
+- **API Endpoints**: RESTful API for accessing tracking data
+
+### Performance Optimizations
+
+- **Real-time Updates**: 
+  - Debounced search (300ms)
+  - Instant filter updates
+  - Dynamic visualization switching
+- **Client-side Caching**: IndexedDB caching for API responses
+- **Request Cancellation**: Prevents race conditions with concurrent requests
+- **Adaptive Rendering**: Quality adjusts based on user interaction
+- **Spatial Indexing**: Octree for efficient nearest neighbor queries
 
 ## Quick Start
 
-### Option 1: Plotly + Gradio (Hugging Face Spaces)
-
+**Start Backend:**
 ```bash
+cd backend
 pip install -r requirements.txt
-python app.py
+python api.py
 ```
 
-### Option 2: Visx + React (Netlify Deployment)
+**Start Frontend:**
+```bash
+cd frontend
+npm install
+npm start
+```
 
-For Netlify deployment, deploy the frontend to Netlify and the backend to Railway or Render. Set the `REACT_APP_API_URL` environment variable to your backend URL.
+Opens at `http://localhost:3000` with full D3.js interactivity.
 
 ## Installation
 
+**Backend:**
 ```bash
+cd backend
 pip install -r requirements.txt
+```
+
+**Frontend:**
+```bash
+cd frontend
+npm install
 ```
 
 ## Usage
 
 ### Local Development
 
+**Start Backend:**
 ```bash
-python app.py
+cd backend
+python api.py
 ```
 
-Or use the test script:
-
-```bash
-python test_local.py
-```
-
-The app will:
+The backend will:
 1. Load a sample of 10,000 models from the dataset
 2. Generate embeddings (first run takes ~2-3 minutes)
 3. Reduce dimensions using UMAP
-4. Launch a Gradio interface at `http://localhost:7860`
+4. Serve the API at `http://localhost:8000`
+
+**Start Frontend:**
+```bash
+cd frontend
+npm start
+```
+
+The frontend will open at `http://localhost:3000`
 
 ### Using the Interface
 
@@ -80,18 +184,6 @@ The app will:
 
 ## Deployment
 
-### Hugging Face Spaces
-
-1. Create a new Space on Hugging Face
-2. Push this repository to the Space
-3. Ensure `requirements.txt` and `app.py` are in the root
-4. The app will automatically:
-   - Load the dataset from Hugging Face Hub
-   - Generate embeddings on first run (cached afterwards)
-   - Serve the interface via Gradio
-
-**Note**: First load may take 2-3 minutes for embedding generation. Subsequent loads will be faster due to caching.
-
 ### Netlify (React Frontend)
 
 1. Deploy frontend to Netlify (set base directory to `frontend`)
@@ -101,19 +193,17 @@ The app will:
 
 ## Architecture
 
-### Current Implementation (Plotly + Gradio)
-
+- **Backend** (`backend/api.py`): FastAPI server serving model data
+- **Frontend** (`frontend/`): React app with D3.js visualizations
+  - **Enhanced Scatter Plot**: D3.js scatter with brush selection, real-time tooltips
+  - **Network Graph**: Force-directed graph showing model relationships and connectivity
+  - **Histograms**: Distribution analysis of downloads, likes, trending scores
+  - **Real-time Updates**: Debounced filtering, dynamic visualizations
+  - **Interactive Features**: Click, brush, drag, zoom, pan
 - **Data Loading** (`data_loader.py`): Loads dataset from Hugging Face Hub, handles filtering and preprocessing
 - **Embedding Generation** (`embeddings.py`): Creates embeddings from model metadata using sentence transformers
 - **Dimensionality Reduction** (`dimensionality_reduction.py`): Uses UMAP to reduce to 2D for visualization
-- **Main App** (`app.py`): Gradio interface with Plotly visualizations
-
-### Alternative Implementation (Visx + React)
-
-For better performance and customization, see the `frontend/` and `backend/` directories for a React + Visx implementation:
-
-- **Backend** (`backend/api.py`): FastAPI server serving model data
-- **Frontend** (`frontend/`): React app with Visx visualizations
+- **Clustering** (`clustering.py`): K-Means clustering with automatic optimization for model grouping
 
 ### Comparison with Hugging Face Dataset Viewer
 
@@ -127,18 +217,22 @@ The HF viewer is optimized for browsing data structure, while this tool focuses 
 ## Design Decisions
 
 The application uses:
-- **2D visualization** for simplicity and accessibility
-- **UMAP** for dimensionality reduction (better global structure than t-SNE)
+- **3D visualization** for immersive exploration of latent space with **2D fallbacks** for accessibility
+- **UMAP** for dimensionality reduction (better global structure than t-SNE, optimized parameters for structure preservation)
 - **Sentence transformers** for efficient embedding generation
-- **Smart sampling** to maintain interactivity with large datasets
-- **Caching** to avoid recomputation on filter changes
+- **Smart sampling** with spatial sparsity to maintain interactivity with large datasets
+- **Multi-level caching** (disk + IndexedDB) to avoid recomputation on filter changes
+- **Adaptive rendering** with frustum culling and level-of-detail for smooth performance
+- **Instanced rendering** for efficient GPU utilization with large point clouds
 
 ## Performance Notes
 
-- **Initial Sample**: 10,000 models (configurable in `app.py`)
-- **Visualization Limit**: Maximum 5,000 points for smooth interaction
+- **Full Dataset**: Loads all ~1.86 million models from the dataset
+- **Visualization Limit**: Maximum 50,000 points for smooth interaction (configurable via `max_points` API parameter)
+- **Level-of-Detail Rendering**: Frontend automatically samples to 10,000 points for 3D visualization while preserving family tree members
 - **Embedding Model**: `all-MiniLM-L6-v2` (good balance of quality and speed)
-- **Caching**: Embeddings and reduced dimensions are cached to disk
+- **Caching**: Embeddings and reduced dimensions are cached to disk for fast startup
+- **Optimizations**: Index-based lookups, vectorized operations, response compression, and optimized top-k queries
 
 ## Requirements
 
