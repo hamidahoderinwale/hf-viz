@@ -925,9 +925,11 @@ function App() {
                         selectedModelId={familyTreeModelId}
                         onViewChange={setViewCenter}
                         targetViewCenter={viewCenter}
-                        onHover={(model) => {
+                        onHover={(model, pointer) => {
                           setHoveredModel(model);
-                          if (!model) {
+                          if (model && pointer) {
+                            setTooltipPosition(pointer);
+                          } else {
                             setTooltipPosition(null);
                           }
                         }}

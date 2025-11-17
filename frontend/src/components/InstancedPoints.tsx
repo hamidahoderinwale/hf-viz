@@ -14,7 +14,7 @@ interface InstancedPointsProps {
   selectedModelId?: string | null;
   familyModelIds?: Set<string>;
   onPointClick?: (model: ModelPoint) => void;
-  onHover?: (model: ModelPoint | null) => void;
+  onHover?: (model: ModelPoint | null, pointer?: { x: number; y: number }) => void;
 }
 
 export default function InstancedPoints({
@@ -165,8 +165,20 @@ export default function InstancedPoints({
         if (instanceId !== undefined && instanceId !== hoveredIndex.current) {
           hoveredIndex.current = instanceId;
           if (instanceId < points.length) {
-            onHover(points[instanceId]);
+            // Convert normalized pointer to screen coordinates
+            const canvas = state.gl.domElement;
+            const rect = canvas.getBoundingClientRect();
+            const pointerX = (state.pointer.x * 0.5 + 0.5) * rect.width + rect.left;
+            const pointerY = (-state.pointer.y * 0.5 + 0.5) * rect.height + rect.top;
+            onHover(points[instanceId], { x: pointerX, y: pointerY });
           }
+        } else if (instanceId !== undefined && instanceId === hoveredIndex.current) {
+          // Update pointer position while hovering
+          const canvas = state.gl.domElement;
+          const rect = canvas.getBoundingClientRect();
+          const pointerX = (state.pointer.x * 0.5 + 0.5) * rect.width + rect.left;
+          const pointerY = (-state.pointer.y * 0.5 + 0.5) * rect.height + rect.top;
+          onHover(points[instanceId], { x: pointerX, y: pointerY });
         }
       } else {
         if (hoveredIndex.current !== null) {

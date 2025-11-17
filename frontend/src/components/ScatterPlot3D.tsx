@@ -27,7 +27,7 @@ interface ScatterPlot3DProps {
   onPointClick?: (model: ModelPoint) => void;
   selectedModelId?: string | null;
   onViewChange?: (center: { x: number; y: number; z: number }) => void;
-  onHover?: (model: ModelPoint | null) => void;
+  onHover?: (model: ModelPoint | null, pointer?: { x: number; y: number }) => void;
   targetViewCenter?: { x: number; y: number; z: number } | null; // Target position to animate to
 }
 
@@ -49,7 +49,7 @@ interface PointProps {
   isSelected: boolean;
   isFamilyMember: boolean;
   onClick: () => void;
-  onHover?: (model: ModelPoint | null) => void;
+  onHover?: (model: ModelPoint | null, pointer?: { x: number; y: number }) => void;
 }
 
 // Memoized Point component with enhanced visual effects
@@ -146,13 +146,27 @@ const Point = memo(function Point({ position, color, size, model, isSelected, is
         ref={meshRef}
         position={position}
         onClick={onClick}
-        onPointerOver={() => {
+        onPointerOver={(e) => {
           setHovered(true);
-          if (onHover) onHover(model);
+          if (onHover) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            onHover(model, { 
+              x: e.clientX, 
+              y: e.clientY 
+            });
+          }
         }}
         onPointerOut={() => {
           setHovered(false);
           if (onHover) onHover(null);
+        }}
+        onPointerMove={(e) => {
+          if (hovered && onHover) {
+            onHover(model, { 
+              x: e.clientX, 
+              y: e.clientY 
+            });
+          }
         }}
         frustumCulled={true}
       >
