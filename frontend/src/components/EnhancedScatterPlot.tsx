@@ -51,7 +51,7 @@ export default function EnhancedScatterPlot({
     return sampled;
   }, [data]);
 
-  const { xScaleBase, yScaleBase, colorScale, sizeScale } = useMemo(() => {
+  const { xScaleBase, yScaleBase, colorScale, sizeScale, useLogSize } = useMemo(() => {
     if (sampledData.length === 0) {
       return {
         xScaleBase: d3.scaleLinear(),
@@ -125,7 +125,7 @@ export default function EnhancedScatterPlot({
         Math.log10(sizeExtent[1] + 1)
       ];
       const logScale = d3.scaleLinear().domain(logExtent).range([3, 20]);
-      sizeScale = ((d: ModelPoint) => {
+      sizeScale = ((d: ModelPoint): number => {
         const val = sizeBy === 'downloads' ? d.downloads : d.likes;
         return logScale(Math.log10(val + 1));
       });
@@ -136,7 +136,7 @@ export default function EnhancedScatterPlot({
         .range([3, 20]);
     }
 
-    return { xScaleBase, yScaleBase, colorScale, sizeScale };
+    return { xScaleBase, yScaleBase, colorScale, sizeScale, useLogSize };
   }, [sampledData, width, height, margin, colorBy, sizeBy]);
 
   // Apply zoom transform to scales
@@ -405,13 +405,13 @@ export default function EnhancedScatterPlot({
                 .duration(500)
                 .ease(d3.easeCubicOut)
                 .attr('r', (d) => {
-                  if (typeof sizeScale === 'function' && sizeScale.length === 1) {
+                  if (useLogSize) {
                     // Custom function that takes ModelPoint
-                    return sizeScale(d);
+                    return (sizeScale as (d: ModelPoint) => number)(d);
                   } else {
                     // D3 scale that takes a number
-                    if (sizeBy === 'downloads') return (sizeScale as any)(d.downloads);
-                    if (sizeBy === 'likes') return (sizeScale as any)(d.likes);
+                    if (sizeBy === 'downloads') return (sizeScale as ReturnType<typeof d3.scaleSqrt>)(d.downloads);
+                    if (sizeBy === 'likes') return (sizeScale as ReturnType<typeof d3.scaleSqrt>)(d.likes);
                     return 5;
                   }
                 })
@@ -429,13 +429,13 @@ export default function EnhancedScatterPlot({
             .attr('cx', (d) => xScale(d.x))
             .attr('cy', (d) => yScale(d.y))
             .attr('r', (d) => {
-              if (typeof sizeScale === 'function' && sizeScale.length === 1) {
+              if (useLogSize) {
                 // Custom function that takes ModelPoint
-                return sizeScale(d);
+                return (sizeScale as (d: ModelPoint) => number)(d);
               } else {
                 // D3 scale that takes a number
-                if (sizeBy === 'downloads') return (sizeScale as any)(d.downloads);
-                if (sizeBy === 'likes') return (sizeScale as any)(d.likes);
+                if (sizeBy === 'downloads') return (sizeScale as ReturnType<typeof d3.scaleSqrt>)(d.downloads);
+                if (sizeBy === 'likes') return (sizeScale as ReturnType<typeof d3.scaleSqrt>)(d.likes);
                 return 5;
               }
             })
@@ -491,15 +491,15 @@ export default function EnhancedScatterPlot({
           .attr('stroke-width', 2)
           .attr('r', () => {
             let baseSize: number;
-            if (typeof sizeScale === 'function' && sizeScale.length === 1) {
+            if (useLogSize) {
               // Custom function that takes ModelPoint
-              baseSize = sizeScale(model);
+              baseSize = (sizeScale as (d: ModelPoint) => number)(model);
             } else {
               // D3 scale that takes a number
               baseSize = sizeBy === 'downloads' 
-                ? (sizeScale as any)(model.downloads) 
+                ? (sizeScale as ReturnType<typeof d3.scaleSqrt>)(model.downloads) 
                 : sizeBy === 'likes' 
-                ? (sizeScale as any)(model.likes) 
+                ? (sizeScale as ReturnType<typeof d3.scaleSqrt>)(model.likes) 
                 : 5;
             }
             return baseSize * 1.3;
@@ -575,13 +575,13 @@ export default function EnhancedScatterPlot({
             .attr('opacity', 0.7)
             .attr('stroke-width', 0.5)
             .attr('r', () => {
-              if (typeof sizeScale === 'function' && sizeScale.length === 1) {
+              if (useLogSize) {
                 // Custom function that takes ModelPoint
-                return sizeScale(model);
+                return (sizeScale as (d: ModelPoint) => number)(model);
               } else {
                 // D3 scale that takes a number
-                if (sizeBy === 'downloads') return (sizeScale as any)(model.downloads);
-                if (sizeBy === 'likes') return (sizeScale as any)(model.likes);
+                if (sizeBy === 'downloads') return (sizeScale as ReturnType<typeof d3.scaleSqrt>)(model.downloads);
+                if (sizeBy === 'likes') return (sizeScale as ReturnType<typeof d3.scaleSqrt>)(model.likes);
                 return 5;
               }
             });
