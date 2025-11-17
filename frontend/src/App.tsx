@@ -23,6 +23,7 @@ const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 function App() {
   const [data, setData] = useState<ModelPoint[]>([]);
+  const [filteredCount, setFilteredCount] = useState<number | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +104,9 @@ function App() {
         setLoading(false);
         return;
       }
-      let models;
+      let models: ModelPoint[];
+      let count: number | null = null;
+      
       if (semanticSimilarityMode && semanticQueryModel) {
         const params = new URLSearchParams({
           query_model_id: semanticQueryModel,
@@ -117,6 +120,8 @@ function App() {
         if (!response.ok) throw new Error('Failed to fetch similar models');
         const result = await response.json();
         models = result.models || [];
+        // Semantic similarity doesn't return filtered_count, use models length
+        count = models.length;
       } else {
         const params = new URLSearchParams({
           min_downloads: minDownloads.toString(),
@@ -133,12 +138,22 @@ function App() {
         const url = `${API_BASE}/api/models?${params}`;
         const response = await requestManager.fetch(url, {}, cacheKey);
         if (!response.ok) throw new Error('Failed to fetch models');
-        models = await response.json();
+        const result = await response.json();
+        
+        // Handle both old format (array) and new format (object with models, filtered_count, returned_count)
+        if (Array.isArray(result)) {
+          models = result;
+          count = models.length;
+        } else {
+          models = result.models || [];
+          count = result.filtered_count ?? models.length;
+        }
       }
       
       await cache.cacheModels(cacheKey, models);
       
       setData(models);
+      setFilteredCount(count);
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         setError(err instanceof Error ? err.message : 'Unknown error');
@@ -406,9 +421,16 @@ function App() {
               fontSize: '0.9rem'
             }}>
               <strong>{data.length.toLocaleString()}</strong> {data.length === 1 ? 'model' : 'models'} shown
-              {stats && (
+              {filteredCount !== null && filteredCount !== data.length && (
                 <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.25rem' }}>
-                  of {stats.total_models.toLocaleString()} total
+                  of {filteredCount.toLocaleString()} matching filters
+                </div>
+              )}
+              {stats && filteredCount !== null && (
+                <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.25rem' }}>
+                  {filteredCount < stats.total_models && (
+                    <>out of {stats.total_models.toLocaleString()} total in dataset</>
+                  )}
                 </div>
               )}
             </div>

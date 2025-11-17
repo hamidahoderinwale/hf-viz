@@ -277,7 +277,7 @@ async def root():
     return {"message": "HF Model Ecosystem API", "status": "running"}
 
 
-@app.get("/api/models", response_model=List[ModelPoint])
+@app.get("/api/models")
 async def get_models(
     min_downloads: int = Query(0),
     min_likes: int = Query(0),
@@ -292,6 +292,11 @@ async def get_models(
     Get filtered models with 3D coordinates for visualization.
     Supports multiple projection methods: UMAP or t-SNE.
     If base_models_only=True, only returns root models (models without a parent_model).
+    
+    Returns a JSON object with:
+    - models: List of ModelPoint objects
+    - filtered_count: Number of models matching filters (before max_points sampling)
+    - returned_count: Number of models actually returned (after max_points sampling)
     """
     global df, embedder, reducer, embeddings, reduced_embeddings
     
@@ -316,8 +321,15 @@ async def get_models(
                 (filtered_df['parent_model'].astype(str) == 'nan')
             ]
     
+    # Store the filtered count BEFORE sampling
+    filtered_count = len(filtered_df)
+    
     if len(filtered_df) == 0:
-        return []
+        return {
+            "models": [],
+            "filtered_count": 0,
+            "returned_count": 0
+        }
     
     if max_points is not None and len(filtered_df) > max_points:
         # Use stratified sampling to preserve distribution of important attributes
