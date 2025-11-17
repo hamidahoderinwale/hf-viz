@@ -113,8 +113,8 @@ hf_viz/
 **Start Backend:**
 ```bash
 cd backend
-pip install -r requirements.txt
-python api.py
+pip install -r config/requirements.txt
+uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 **Start Frontend:**
@@ -131,7 +131,7 @@ Opens at `http://localhost:3000` with full D3.js interactivity.
 **Backend:**
 ```bash
 cd backend
-pip install -r requirements.txt
+pip install -r config/requirements.txt
 ```
 
 **Frontend:**
@@ -147,7 +147,7 @@ npm install
 **Start Backend:**
 ```bash
 cd backend
-python api.py
+uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 The backend will:
@@ -193,17 +193,18 @@ The frontend will open at `http://localhost:3000`
 
 ## Architecture
 
-- **Backend** (`backend/api.py`): FastAPI server serving model data
+- **Backend** (`backend/api/main.py`): FastAPI server serving model data
 - **Frontend** (`frontend/`): React app with D3.js visualizations
   - **Enhanced Scatter Plot**: D3.js scatter with brush selection, real-time tooltips
   - **Network Graph**: Force-directed graph showing model relationships and connectivity
   - **Histograms**: Distribution analysis of downloads, likes, trending scores
   - **Real-time Updates**: Debounced filtering, dynamic visualizations
   - **Interactive Features**: Click, brush, drag, zoom, pan
-- **Data Loading** (`data_loader.py`): Loads dataset from Hugging Face Hub, handles filtering and preprocessing
-- **Embedding Generation** (`embeddings.py`): Creates embeddings from model metadata using sentence transformers
-- **Dimensionality Reduction** (`dimensionality_reduction.py`): Uses UMAP to reduce to 2D for visualization
-- **Clustering** (`clustering.py`): K-Means clustering with automatic optimization for model grouping
+- **Data Loading** (`backend/utils/data_loader.py`): Loads dataset from Hugging Face Hub, handles filtering and preprocessing
+- **Embedding Generation** (`backend/utils/embeddings.py`): Creates embeddings from model metadata using sentence transformers
+- **Dimensionality Reduction** (`backend/utils/dimensionality_reduction.py`): Uses UMAP to reduce to 2D for visualization
+- **Clustering** (`backend/utils/clustering.py`): K-Means clustering with automatic optimization for model grouping
+- **Services** (`backend/services/`): External service integrations (arXiv API, model tracking, scheduler)
 
 ### Comparison with Hugging Face Dataset Viewer
 
