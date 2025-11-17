@@ -897,7 +897,18 @@ function App() {
             <>
               {viewMode === '3d' && (
                 <div style={{ display: 'flex', gap: '10px', width: '100%', height: '100%' }}>
-                  <div style={{ flex: 1, position: 'relative' }}>
+                  <div 
+                    style={{ flex: 1, position: 'relative' }}
+                    onMouseMove={(e) => {
+                      if (hoveredModel) {
+                        setTooltipPosition({ x: e.clientX, y: e.clientY });
+                      }
+                    }}
+                    onMouseLeave={() => {
+                      setHoveredModel(null);
+                      setTooltipPosition(null);
+                    }}
+                  >
                     <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#666' }}>Loading 3D visualization...</div>}>
                       <ScatterPlot3D
                         width={width * 0.8}
@@ -915,8 +926,19 @@ function App() {
                         selectedModelId={familyTreeModelId}
                         onViewChange={setViewCenter}
                         targetViewCenter={viewCenter}
+                        onHover={(model) => {
+                          setHoveredModel(model);
+                          if (!model) {
+                            setTooltipPosition(null);
+                          }
+                        }}
                       />
                     </Suspense>
+                    <ModelTooltip 
+                      model={hoveredModel}
+                      position={tooltipPosition}
+                      visible={!!hoveredModel && !!tooltipPosition}
+                    />
                   </div>
                   <div style={{ width: width * 0.2, height: height, display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <div style={{
