@@ -404,7 +404,7 @@ export default function EnhancedScatterPlot({
                 .transition()
                 .duration(500)
                 .ease(d3.easeCubicOut)
-                .attr('r', (d) => {
+                .attr('r', (d): number => {
                   if (useLogSize) {
                     // Custom function that takes ModelPoint
                     return (sizeScale as (d: ModelPoint) => number)(d);
@@ -428,7 +428,7 @@ export default function EnhancedScatterPlot({
             .ease(d3.easeCubicOut)
             .attr('cx', (d) => xScale(d.x))
             .attr('cy', (d) => yScale(d.y))
-            .attr('r', (d) => {
+            .attr('r', (d): number => {
               if (useLogSize) {
                 // Custom function that takes ModelPoint
                 return (sizeScale as (d: ModelPoint) => number)(d);
@@ -489,7 +489,7 @@ export default function EnhancedScatterPlot({
           .duration(150)
           .attr('opacity', 1)
           .attr('stroke-width', 2)
-          .attr('r', () => {
+          .attr('r', (): number => {
             let baseSize: number;
             if (useLogSize) {
               // Custom function that takes ModelPoint
@@ -574,7 +574,7 @@ export default function EnhancedScatterPlot({
             .duration(150)
             .attr('opacity', 0.7)
             .attr('stroke-width', 0.5)
-            .attr('r', () => {
+            .attr('r', (): number => {
               if (useLogSize) {
                 // Custom function that takes ModelPoint
                 return (sizeScale as (d: ModelPoint) => number)(model);
