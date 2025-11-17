@@ -37,11 +37,12 @@ export default function InstancedPoints({
   const material = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        metalness: 0.8,
-        roughness: 0.2,
+        color: 0xffffff, // White base color - required for vertexColors to work
+        metalness: 0.3, // Reduced for better color visibility
+        roughness: 0.7, // Increased for better color visibility
         vertexColors: true, // Enable vertex colors for per-instance coloring
         transparent: true,
-        opacity: 0.88, // Increased base opacity
+        opacity: 0.9, // Increased base opacity for better visibility
       }),
     []
   );
@@ -55,8 +56,8 @@ export default function InstancedPoints({
     const color = new THREE.Color();
     const scale = new THREE.Vector3(1, 1, 1);
 
-    // Initialize instanceColor if it doesn't exist
-    if (!mesh.instanceColor) {
+    // Initialize or resize instanceColor buffer
+    if (!mesh.instanceColor || mesh.instanceColor.count !== points.length) {
       const colorArray = new Float32Array(points.length * 3);
       mesh.instanceColor = new THREE.InstancedBufferAttribute(colorArray, 3);
     }
@@ -104,6 +105,7 @@ export default function InstancedPoints({
     const matrix = new THREE.Matrix4();
     const scale = new THREE.Vector3(1, 1, 1);
     const position = new THREE.Vector3();
+    const color = new THREE.Color();
     
     // Smooth scale transitions and update depth-based opacity
     for (let i = 0; i < points.length; i++) {
@@ -126,19 +128,31 @@ export default function InstancedPoints({
       const distance = position.distanceTo(camera.position);
       const maxDistance = 10;
       const minDistance = 1;
-      const distanceFactor = Math.max(0.3, Math.min(1, 1 - (distance - minDistance) / (maxDistance - minDistance)));
+      const distanceFactor = Math.max(0.4, Math.min(1, 1 - (distance - minDistance) / (maxDistance - minDistance)));
+      
+      // Update color with distance-based brightness adjustment
+      color.set(colors[i]);
+      if (isSelected) {
+        color.set('#ffffff');
+      } else if (isFamilyMember) {
+        color.set('#4a4a4a');
+      } else {
+        // Slightly brighten colors for better visibility
+        color.multiplyScalar(1.2).clamp();
+      }
+      mesh.setColorAt(i, color);
       
       // Update matrix with smooth scale
       scale.setScalar(currentScales.current[i]);
       matrix.makeScale(scale.x, scale.y, scale.z);
       matrix.setPosition(point.x, point.y, point.z);
       mesh.setMatrixAt(i, matrix);
-      
-      // Update opacity in instanceColor (we'll need to handle this differently)
-      // For now, we'll update the material opacity globally based on average distance
     }
     
     mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) {
+      mesh.instanceColor.needsUpdate = true;
+    }
 
     // Handle hover detection
     if (onHover) {

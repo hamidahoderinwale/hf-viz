@@ -161,9 +161,9 @@ const Point = memo(function Point({ position, color, size, model, isSelected, is
           color={isSelected ? '#ffffff' : isFamilyMember ? '#4a4a4a' : color}
           emissive={isSelected ? '#ffffff' : isFamilyMember ? '#6a6a6a' : '#000000'}
           emissiveIntensity={isSelected ? 0.6 : isFamilyMember ? 0.2 : 0}
-          metalness={0.8}
-          roughness={0.2}
-          opacity={0.88}
+          metalness={0.3}
+          roughness={0.7}
+          opacity={0.9}
           transparent
         />
       </mesh>
