@@ -149,7 +149,6 @@ const Point = memo(function Point({ position, color, size, model, isSelected, is
         onPointerOver={(e) => {
           setHovered(true);
           if (onHover) {
-            const rect = e.currentTarget.getBoundingClientRect();
             onHover(model, { 
               x: e.clientX, 
               y: e.clientY 

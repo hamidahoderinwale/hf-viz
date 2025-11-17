@@ -138,7 +138,11 @@ export default function InstancedPoints({
         color.set('#4a4a4a');
       } else {
         // Slightly brighten colors for better visibility
-        color.multiplyScalar(1.2).clamp();
+        color.multiplyScalar(1.2);
+        // Clamp RGB values to [0, 1] range
+        color.r = Math.max(0, Math.min(1, color.r));
+        color.g = Math.max(0, Math.min(1, color.g));
+        color.b = Math.max(0, Math.min(1, color.b));
       }
       mesh.setColorAt(i, color);
       
