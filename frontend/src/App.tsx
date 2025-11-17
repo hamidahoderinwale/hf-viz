@@ -247,13 +247,37 @@ function App() {
   const loadSimilarModels = useCallback(async (modelId: string) => {
     try {
       const response = await fetch(`${API_BASE}/api/similar/${encodeURIComponent(modelId)}?k=10`);
-      if (!response.ok) throw new Error('Failed to load similar models');
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = 'Failed to load similar models';
+        if (response.status === 404) {
+          errorMessage = 'Model not found';
+        } else if (response.status === 503) {
+          errorMessage = 'Data not loaded yet. Please wait a moment and try again.';
+        } else {
+          try {
+            const errorData = JSON.parse(errorText);
+            errorMessage = errorData.detail || errorMessage;
+          } catch {
+            errorMessage = `Error ${response.status}: ${errorText || errorMessage}`;
+          }
+        }
+        throw new Error(errorMessage);
+      }
       const data = await response.json();
       setSimilarModels(data.similar_models || []);
       setShowSimilar(true);
     } catch (err) {
-      console.error('Similar models error:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load similar models';
+      console.error('Similar models error:', errorMessage, err);
+      // Only show error if it's not a silent failure (e.g., user cancelled)
+      if (errorMessage !== 'Failed to load similar models' || !(err instanceof TypeError && err.message.includes('fetch'))) {
+        setError(`Similar models: ${errorMessage}`);
+        // Clear error after 5 seconds
+        setTimeout(() => setError(null), 5000);
+      }
       setSimilarModels([]);
+      setShowSimilar(false);
     }
   }, []);
 
