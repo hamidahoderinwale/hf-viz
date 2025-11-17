@@ -54,7 +54,7 @@ export default function InstancedPoints({
     // Initialize instanceColor if it doesn't exist
     if (!mesh.instanceColor) {
       const colorArray = new Float32Array(points.length * 3);
-      mesh.instanceColor = new THREE.BufferAttribute(colorArray, 3);
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(colorArray, 3);
     }
 
     // Set up instances

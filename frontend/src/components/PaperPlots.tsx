@@ -602,7 +602,7 @@ export default function PaperPlots({ data, width = 800, height = 600 }: PaperPlo
         if (!extent[0] || !extent[1]) return;
         
         const xScale = d3.scaleTime()
-          .domain([extent[0], extent[1]])
+          .domain([extent[0] as Date, extent[1] as Date])
           .range([0, innerWidth]);
 
         const yScale = d3.scaleLinear()
