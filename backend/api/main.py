@@ -380,11 +380,13 @@ async def get_models(
     # Since df is indexed by model_id, we need to get the integer positions
     if df.index.name == 'model_id' or 'model_id' in df.index.names:
         # Get integer positions of filtered rows in original dataframe
-        filtered_indices = [df.index.get_loc(idx) for idx in filtered_df.index]
-        filtered_indices = np.array(filtered_indices, dtype=int)
+        # Use vectorized lookup for better performance
+        filtered_indices = np.array([df.index.get_loc(idx) for idx in filtered_df.index], dtype=np.int32)
     else:
         # If using integer index, use directly
-        filtered_indices = filtered_df.index.values.astype(int)
+        filtered_indices = filtered_df.index.values.astype(np.int32)
+    
+    # Use advanced indexing for faster access
     filtered_reduced = reduced_embeddings[filtered_indices]
     
     family_depths = calculate_family_depths(df)
@@ -395,24 +397,42 @@ async def get_models(
     
     filtered_clusters = cluster_labels[filtered_indices]
     
+    # Build response with optimized vectorized operations
+    # Pre-extract arrays for faster access
+    model_ids = filtered_df['model_id'].astype(str).values
+    library_names = filtered_df['library_name'].values
+    pipeline_tags = filtered_df['pipeline_tag'].values
+    downloads_arr = filtered_df['downloads'].fillna(0).astype(int).values
+    likes_arr = filtered_df['likes'].fillna(0).astype(int).values
+    trending_scores = filtered_df.get('trendingScore', pd.Series()).values
+    tags_arr = filtered_df.get('tags', pd.Series()).values
+    parent_models = filtered_df.get('parent_model', pd.Series()).values
+    licenses_arr = filtered_df.get('licenses', pd.Series()).values
+    
+    # Vectorized coordinate extraction
+    x_coords = filtered_reduced[:, 0].astype(float)
+    y_coords = filtered_reduced[:, 1].astype(float)
+    z_coords = filtered_reduced[:, 2].astype(float) if filtered_reduced.shape[1] > 2 else np.zeros(len(filtered_reduced), dtype=float)
+    
+    # Build models list with optimized operations
     models = [
         ModelPoint(
-            model_id=str(row['model_id']) if pd.notna(row.get('model_id')) else 'Unknown',
-            x=float(filtered_reduced[idx, 0]),
-            y=float(filtered_reduced[idx, 1]),
-            z=float(filtered_reduced[idx, 2]) if filtered_reduced.shape[1] > 2 else 0.0,
-            library_name=str(row['library_name']) if pd.notna(row.get('library_name')) else None,
-            pipeline_tag=str(row['pipeline_tag']) if pd.notna(row.get('pipeline_tag')) else None,
-            downloads=int(row.get('downloads', 0)) if pd.notna(row.get('downloads')) else 0,
-            likes=int(row.get('likes', 0)) if pd.notna(row.get('likes')) else 0,
-            trending_score=float(row['trendingScore']) if pd.notna(row.get('trendingScore')) else None,
-            tags=str(row['tags']) if pd.notna(row.get('tags')) else None,
-            parent_model=str(row['parent_model']) if pd.notna(row.get('parent_model')) else None,
-            licenses=str(row['licenses']) if pd.notna(row.get('licenses')) else None,
-            family_depth=family_depths.get(str(row['model_id']), None),
+            model_id=model_ids[idx],
+            x=float(x_coords[idx]),
+            y=float(y_coords[idx]),
+            z=float(z_coords[idx]),
+            library_name=library_names[idx] if pd.notna(library_names[idx]) else None,
+            pipeline_tag=pipeline_tags[idx] if pd.notna(pipeline_tags[idx]) else None,
+            downloads=int(downloads_arr[idx]),
+            likes=int(likes_arr[idx]),
+            trending_score=float(trending_scores[idx]) if idx < len(trending_scores) and pd.notna(trending_scores[idx]) else None,
+            tags=tags_arr[idx] if idx < len(tags_arr) and pd.notna(tags_arr[idx]) else None,
+            parent_model=parent_models[idx] if idx < len(parent_models) and pd.notna(parent_models[idx]) else None,
+            licenses=licenses_arr[idx] if idx < len(licenses_arr) and pd.notna(licenses_arr[idx]) else None,
+            family_depth=family_depths.get(model_ids[idx], None),
             cluster_id=int(filtered_clusters[idx]) if idx < len(filtered_clusters) else None
         )
-        for idx, (i, row) in enumerate(filtered_df.iterrows())
+        for idx in range(len(filtered_df))
     ]
     
     return models

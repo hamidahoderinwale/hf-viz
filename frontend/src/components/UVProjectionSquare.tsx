@@ -305,7 +305,9 @@ const UVProjectionSquare = memo(function UVProjectionSquare({
       </div>
     </div>
   );
-}
+});
+
+export default UVProjectionSquare;
 
 
 
