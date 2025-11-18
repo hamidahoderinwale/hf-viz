@@ -59,6 +59,12 @@ function App() {
   const [hoveredModel, setHoveredModel] = useState<ModelPoint | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
   
+  // Structural visualization options
+  const [showNetworkEdges, setShowNetworkEdges] = useState(false);
+  const [showStructuralGroups, setShowStructuralGroups] = useState(false);
+  const [overviewMode, setOverviewMode] = useState(false);
+  const [networkEdgeType, setNetworkEdgeType] = useState<'library' | 'pipeline' | 'combined'>('combined');
+  
   const activeFilterCount = (minDownloads > 0 ? 1 : 0) + 
                            (minLikes > 0 ? 1 : 0) + 
                            (searchQuery.length > 0 ? 1 : 0);
@@ -137,6 +143,11 @@ function App() {
         if (searchQuery) {
           params.append('search_query', searchQuery);
         }
+        
+        // Request a large number of models for better representation
+        // The backend will use stratified sampling if needed, and frontend will further optimize
+        // Set to 500K to get good coverage while allowing backend to optimize
+        params.append('max_points', '500000');
 
         const url = `${API_BASE}/api/models?${params}`;
         const response = await requestManager.fetch(url, {}, cacheKey);
@@ -346,7 +357,8 @@ function App() {
   }, []);
 
   return (
-    <div className="App">
+    <ErrorBoundary>
+      <div className="App">
       <header className="App-header">
         <h1>Anatomy of a Machine Learning Ecosystem: 2 Million Models on Hugging Face</h1>
         <p style={{ maxWidth: '900px', margin: '0 auto', lineHeight: '1.6' }}>
@@ -696,6 +708,78 @@ function App() {
             )}
           </div>
 
+          {/* Structural Visualization Options */}
+          {viewMode === '3d' && (
+            <div className="sidebar-section" style={{ background: '#f0f8f0', borderColor: '#90ee90' }}>
+              <h3>🔗 Structural Visualization</h3>
+              <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '1rem', lineHeight: '1.4' }}>
+                Explore relationships and structure in the model ecosystem
+              </div>
+              
+              <label style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={overviewMode}
+                  onChange={(e) => setOverviewMode(e.target.checked)}
+                  style={{ marginRight: '0.5rem', cursor: 'pointer' }}
+                />
+                <div>
+                  <span style={{ fontWeight: '500' }}>🔍 Overview Mode</span>
+                  <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
+                    Zoom out to see full ecosystem structure with all relationships visible. Camera will automatically adjust.
+                  </div>
+                </div>
+              </label>
+
+              <label style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={showNetworkEdges}
+                  onChange={(e) => setShowNetworkEdges(e.target.checked)}
+                  style={{ marginRight: '0.5rem', cursor: 'pointer' }}
+                />
+                <div>
+                  <span style={{ fontWeight: '500' }}>🌐 Network Relationships</span>
+                  <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
+                    Show connections between related models (same library, pipeline, or tags). Blue = library, Pink = pipeline.
+                  </div>
+                </div>
+              </label>
+
+              {showNetworkEdges && (
+                <div style={{ marginLeft: '1.5rem', marginBottom: '1rem', padding: '0.75rem', background: 'white', borderRadius: '4px', border: '1px solid #d0d0d0' }}>
+                  <label style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+                    Connection Type
+                  </label>
+                  <select 
+                    value={networkEdgeType} 
+                    onChange={(e) => setNetworkEdgeType(e.target.value as 'library' | 'pipeline' | 'combined')}
+                    style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #d0d0d0', fontSize: '0.85rem' }}
+                  >
+                    <option value="combined">Combined (library + pipeline + tags)</option>
+                    <option value="library">Library Only</option>
+                    <option value="pipeline">Pipeline Only</option>
+                  </select>
+                </div>
+              )}
+
+              <label style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={showStructuralGroups}
+                  onChange={(e) => setShowStructuralGroups(e.target.checked)}
+                  style={{ marginRight: '0.5rem', cursor: 'pointer' }}
+                />
+                <div>
+                  <span style={{ fontWeight: '500' }}>📦 Structural Groupings</span>
+                  <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
+                    Highlight clusters and groups with wireframe boundaries. Shows top library and pipeline clusters.
+                  </div>
+                </div>
+              </label>
+            </div>
+          )}
+
           {/* Quick Filters */}
           <div className="sidebar-section">
             <h3>Quick Filters</h3>
@@ -967,6 +1051,10 @@ function App() {
                         sizeBy={sizeBy}
                         colorScheme={colorScheme}
                         showLegend={showLegend}
+                        showNetworkEdges={showNetworkEdges}
+                        showStructuralGroups={showStructuralGroups}
+                        overviewMode={overviewMode}
+                        networkEdgeType={networkEdgeType}
                         onPointClick={(model) => {
                           setSelectedModel(model);
                           setIsModalOpen(true);

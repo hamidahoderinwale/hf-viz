@@ -5,23 +5,21 @@
 
 [build.environment]
   NODE_VERSION = "18"
+  # Set this to your backend URL (Railway, Render, etc.)
+  # REACT_APP_API_URL = "https://your-backend-url.railway.app"
 
-# Redirect all routes to index.html for React Router
+# Redirect all routes to index.html for React Router (SPA routing)
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
 
-# Netlify Functions (if using serverless backend)
-[functions]
-  directory = "netlify-functions"
-  node_bundler = "esbuild"
-
-# Headers for API routes
+# Security headers
 [[headers]]
-  for = "/.netlify/functions/*"
+  for = "/*"
   [headers.values]
-    Access-Control-Allow-Origin = "*"
-    Access-Control-Allow-Headers = "Content-Type"
-    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
 

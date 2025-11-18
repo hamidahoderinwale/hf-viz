@@ -24,6 +24,10 @@ interface ScatterPlot3DProps {
   sizeBy: string;
   colorScheme?: 'viridis' | 'plasma' | 'inferno' | 'magma' | 'coolwarm';
   showLegend?: boolean;
+  showNetworkEdges?: boolean;
+  showStructuralGroups?: boolean;
+  overviewMode?: boolean;
+  networkEdgeType?: 'library' | 'pipeline' | 'combined';
   onPointClick?: (model: ModelPoint) => void;
   selectedModelId?: string | null;
   onViewChange?: (center: { x: number; y: number; z: number }) => void;
@@ -78,9 +82,9 @@ const Point = memo(function Point({ position, color, size, model, isSelected, is
       meshRef.current.material.opacity = baseOpacity * distanceFactor;
     }
     
-    // Subtle animation for selected/family members
-    if (isSelected || isFamilyMember) {
-      meshRef.current.rotation.y += 0.01;
+      // Subtle animation for selected/family members
+      if (isSelected || isFamilyMember) {
+        meshRef.current.rotation.y += 0.01;
     }
     
     // Glow effect for selected/hovered points
@@ -132,23 +136,23 @@ const Point = memo(function Point({ position, color, size, model, isSelected, is
       )}
       
       {/* Main point */}
-      <mesh
-        ref={meshRef}
-        position={position}
-        onClick={onClick}
+    <mesh
+      ref={meshRef}
+      position={position}
+      onClick={onClick}
         onPointerOver={(e) => {
-          setHovered(true);
+        setHovered(true);
           if (onHover) {
             onHover(model, { 
               x: e.clientX, 
               y: e.clientY 
             });
           }
-        }}
-        onPointerOut={() => {
-          setHovered(false);
-          if (onHover) onHover(null);
-        }}
+      }}
+      onPointerOut={() => {
+        setHovered(false);
+        if (onHover) onHover(null);
+      }}
         onPointerMove={(e) => {
           if (hovered && onHover) {
             onHover(model, { 
@@ -160,16 +164,16 @@ const Point = memo(function Point({ position, color, size, model, isSelected, is
         frustumCulled={true}
       >
         <sphereGeometry args={[0.02, 12, 12]} />
-        <meshStandardMaterial
-          color={isSelected ? '#ffffff' : isFamilyMember ? '#4a4a4a' : color}
-          emissive={isSelected ? '#ffffff' : isFamilyMember ? '#6a6a6a' : '#000000'}
+      <meshStandardMaterial
+        color={isSelected ? '#ffffff' : isFamilyMember ? '#4a4a4a' : color}
+        emissive={isSelected ? '#ffffff' : isFamilyMember ? '#6a6a6a' : '#000000'}
           emissiveIntensity={isSelected ? 0.6 : isFamilyMember ? 0.2 : 0}
           metalness={0.3}
           roughness={0.7}
           opacity={0.9}
-          transparent
-        />
-      </mesh>
+        transparent
+      />
+    </mesh>
     </group>
   );
 }, (prevProps, nextProps) => {
@@ -235,11 +239,11 @@ function FamilyEdge({ start, end, parentColor, childColor, depth }: FamilyEdgePr
   return (
     <group>
       {/* Main edge with interpolated color - thicker and more visible */}
-      <Line
-        points={points}
+    <Line
+      points={points}
         color={interpolatedColor}
         lineWidth={lineWidth}
-        dashed={false}
+      dashed={false}
         transparent
         opacity={opacity}
       />
@@ -264,6 +268,10 @@ const SceneContent = memo(function SceneContent({
   colorBy,
   sizeBy,
   colorScheme = 'viridis',
+  showNetworkEdges = false,
+  showStructuralGroups = false,
+  overviewMode = false,
+  networkEdgeType = 'combined',
   onPointClick,
   selectedModelId,
   onHover,
@@ -320,35 +328,44 @@ const SceneContent = memo(function SceneContent({
     if (data.length > 10000 && spatialIndex && camera && gl) {
       // Use adaptive sampling based on distance from camera
       // When moving fast, reduce quality for better performance
-      const qualityFactor = isInteracting && movementSpeedRef.current > 0.01 ? 0.6 : 1.0;
-      const maxDistance = 15 * qualityFactor; // Increased view distance
+      const qualityFactor = isInteracting && movementSpeedRef.current > 0.01 ? 0.7 : 1.0; // Increased from 0.6
+      const maxDistance = 20 * qualityFactor; // Increased view distance from 15 to 20
       
-      // Sample based on distance - more aggressive for very large datasets
+      // Improved sampling strategy to show more models while maintaining performance
+      // Use higher sample rates to better represent the full dataset
       let distanceSampled: ModelPoint[];
-      if (others.length > 200000) {
-        // For extremely large datasets (>200K), use more aggressive sampling for sparsity
-        const sampleRate = qualityFactor * 0.15; // Sample 15% when not interacting (was 30%)
+      if (others.length > 400000) {
+        // For extremely large datasets (>400K), sample 30% (increased from 15%)
+        const sampleRate = qualityFactor * 0.3;
+        const step = Math.ceil(1 / sampleRate);
+        distanceSampled = [];
+        for (let i = 0; i < others.length; i += step) {
+          distanceSampled.push(others[i]);
+        }
+      } else if (others.length > 200000) {
+        // For very large datasets (200K-400K), sample 40% (increased from 15%)
+        const sampleRate = qualityFactor * 0.4;
         const step = Math.ceil(1 / sampleRate);
         distanceSampled = [];
         for (let i = 0; i < others.length; i += step) {
           distanceSampled.push(others[i]);
         }
       } else if (others.length > 100000) {
-        // For large datasets (100K-200K), sample 20%
-        const sampleRate = qualityFactor * 0.2;
+        // For large datasets (100K-200K), sample 50% (increased from 20%)
+        const sampleRate = qualityFactor * 0.5;
         const step = Math.ceil(1 / sampleRate);
         distanceSampled = [];
         for (let i = 0; i < others.length; i += step) {
           distanceSampled.push(others[i]);
         }
       } else {
-        // Use adaptive sampling with reduced rate for more sparsity
-        distanceSampled = adaptiveSampleByDistance(others, camera, qualityFactor * 0.7, maxDistance);
+        // Use adaptive sampling with higher rate for better representation
+        distanceSampled = adaptiveSampleByDistance(others, camera, qualityFactor * 0.85, maxDistance); // Increased from 0.7
       }
       
       // Apply frustum culling if camera is available
-      // Increased limit for instanced rendering (can handle more)
-      const maxVisible = Math.min(distanceSampled.length, 100000); // Increased from 20K to 100K
+      // Increased limit for instanced rendering (can handle more with better sampling)
+      const maxVisible = Math.min(distanceSampled.length, 200000); // Increased from 100K to 200K
       let visible: ModelPoint[];
       try {
         visible = filterVisiblePoints(
@@ -356,7 +373,7 @@ const SceneContent = memo(function SceneContent({
           camera, 
           gl, 
           maxDistance, 
-          0.02 // Lower LOD threshold to show more points
+          0.01 // Lower LOD threshold to show more points (was 0.02)
         );
       } catch (e) {
         // Fallback if frustum calculation fails
@@ -364,11 +381,12 @@ const SceneContent = memo(function SceneContent({
       }
       
       // Apply spatial sparsity to reduce density and improve navigability
+      // But be less aggressive to show more models
       const combined = [...important, ...visible];
-      if (combined.length > 3000) { // Lower threshold for sparsity application
+      if (combined.length > 5000) { // Increased threshold from 3000
         // Calculate adaptive minimum distance based on data spread
         const avgDistance = calculateAverageDistance(combined);
-        const sparsityFactor = getAdaptiveSparsityFactor(combined.length) * 1.5; // Increase sparsity by 50%
+        const sparsityFactor = getAdaptiveSparsityFactor(combined.length) * 1.2; // Reduced from 1.5 to show more
         const minDistance = avgDistance * sparsityFactor;
         
         if (minDistance > 0) {
@@ -380,13 +398,14 @@ const SceneContent = memo(function SceneContent({
     }
     
     // For smaller datasets, use simple sampling with sparsity
-    // Reduced render limit for better sparsity and navigability
-    const renderLimit = data.length > 100000 ? 100000 : data.length; // Reduced from 200K to 100K
+    // Increased render limit to show more models
+    const renderLimit = data.length > 200000 ? 200000 : data.length; // Increased from 100K to 200K
     if (data.length <= renderLimit) {
       // Still apply sparsity even if under limit for better navigability
-      if (data.length > 3000) {
+      // But be less aggressive to show more models
+      if (data.length > 5000) { // Increased threshold from 3000
         const avgDistance = calculateAverageDistance(data);
-        const sparsityFactor = getAdaptiveSparsityFactor(data.length) * 1.5;
+        const sparsityFactor = getAdaptiveSparsityFactor(data.length) * 1.2; // Reduced from 1.5
         const minDistance = avgDistance * sparsityFactor;
         if (minDistance > 0) {
           return applySpatialSparsity(data, minDistance, importantIds);
@@ -432,7 +451,7 @@ const SceneContent = memo(function SceneContent({
     colorScheme: string;
     scales: any;
   } | null>(null);
-  
+
   const { xScale, yScale, zScale, colorScale, sizeScale, familyMap } = useMemo(() => {
     // Return cached scales if inputs haven't changed
     if (scalesCacheRef.current &&
@@ -651,6 +670,193 @@ const SceneContent = memo(function SceneContent({
     return edges;
   }, [familyTree, xScale, yScale, zScale, colorScheme]);
 
+  // Build network edges (co-occurrence relationships)
+  const networkEdges = useMemo(() => {
+    if (!showNetworkEdges || sampledData.length === 0) return [];
+    
+    const edges: Array<{
+      start: [number, number, number];
+      end: [number, number, number];
+      weight: number;
+      type: string;
+    }> = [];
+    
+    // Create a map for quick lookups
+    const modelMap = new Map(sampledData.map(m => [m.model_id, m]));
+    
+    // Group models by library, pipeline, or both
+    const groups = new Map<string, ModelPoint[]>();
+    
+    sampledData.forEach(model => {
+      if (networkEdgeType === 'library' || networkEdgeType === 'combined') {
+        const key = `lib:${model.library_name || 'unknown'}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(model);
+      }
+      if (networkEdgeType === 'pipeline' || networkEdgeType === 'combined') {
+        const key = `pipe:${model.pipeline_tag || 'unknown'}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(model);
+      }
+    });
+    
+    // Create edges between models in the same group
+    // Limit to avoid performance issues - only connect nearby models
+    const maxConnectionsPerModel = overviewMode ? 5 : 3;
+    const maxDistance = overviewMode ? 0.5 : 0.3; // Distance threshold in normalized space
+    
+    groups.forEach((models, groupKey) => {
+      if (models.length < 2) return;
+      
+      // For large groups, sample connections
+      const modelsToConnect = models.length > 50 
+        ? models.filter((_, i) => i % Math.ceil(models.length / 50) === 0)
+        : models;
+      
+      for (let i = 0; i < modelsToConnect.length; i++) {
+        const model1 = modelsToConnect[i];
+        let connections = 0;
+        
+        for (let j = i + 1; j < modelsToConnect.length && connections < maxConnectionsPerModel; j++) {
+          const model2 = modelsToConnect[j];
+          
+          // Calculate distance in normalized space
+          const dx = model1.x - model2.x;
+          const dy = model1.y - model2.y;
+          const dz = model1.z - model2.z;
+          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          
+          if (distance < maxDistance) {
+            edges.push({
+              start: [xScale(model1.x), yScale(model1.y), zScale(model1.z)],
+              end: [xScale(model2.x), yScale(model2.y), zScale(model2.z)],
+              weight: 1 - (distance / maxDistance), // Higher weight for closer models
+              type: groupKey.startsWith('lib:') ? 'library' : 'pipeline',
+            });
+            connections++;
+          }
+        }
+      }
+    });
+    
+    return edges;
+  }, [showNetworkEdges, sampledData, networkEdgeType, overviewMode, xScale, yScale, zScale]);
+
+  // Build structural groupings (library/pipeline clusters)
+  const structuralGroups = useMemo(() => {
+    if (!showStructuralGroups || sampledData.length === 0) return [];
+    
+    const groups: Array<{
+      models: ModelPoint[];
+      type: 'library' | 'pipeline';
+      name: string;
+      color: string;
+      center: [number, number, number];
+    }> = [];
+    
+    // Group by library
+    const libraryGroups = new Map<string, ModelPoint[]>();
+    sampledData.forEach(model => {
+      const lib = model.library_name || 'unknown';
+      if (!libraryGroups.has(lib)) libraryGroups.set(lib, []);
+      libraryGroups.get(lib)!.push(model);
+    });
+    
+    // Group by pipeline
+    const pipelineGroups = new Map<string, ModelPoint[]>();
+    sampledData.forEach(model => {
+      const pipe = model.pipeline_tag || 'unknown';
+      if (!pipelineGroups.has(pipe)) pipelineGroups.set(pipe, []);
+      pipelineGroups.get(pipe)!.push(model);
+    });
+    
+    // Only show groups with multiple models and reasonable size
+    const minGroupSize = overviewMode ? 3 : 5;
+    const maxGroups = overviewMode ? 20 : 10;
+    
+    // Process library groups
+    const sortedLibGroups = Array.from(libraryGroups.entries())
+      .filter(([_, models]) => models.length >= minGroupSize)
+      .sort((a, b) => b[1].length - a[1].length)
+      .slice(0, maxGroups);
+    
+    sortedLibGroups.forEach(([name, models]) => {
+      // Calculate center
+      const centerX = models.reduce((sum, m) => sum + m.x, 0) / models.length;
+      const centerY = models.reduce((sum, m) => sum + m.y, 0) / models.length;
+      const centerZ = models.reduce((sum, m) => sum + m.z, 0) / models.length;
+      
+      groups.push({
+        models,
+        type: 'library',
+        name,
+        color: '#4a90e2',
+        center: [xScale(centerX), yScale(centerY), zScale(centerZ)],
+      });
+    });
+    
+    // Process pipeline groups
+    const sortedPipeGroups = Array.from(pipelineGroups.entries())
+      .filter(([_, models]) => models.length >= minGroupSize)
+      .sort((a, b) => b[1].length - a[1].length)
+      .slice(0, maxGroups);
+    
+    sortedPipeGroups.forEach(([name, models]) => {
+      const centerX = models.reduce((sum, m) => sum + m.x, 0) / models.length;
+      const centerY = models.reduce((sum, m) => sum + m.y, 0) / models.length;
+      const centerZ = models.reduce((sum, m) => sum + m.z, 0) / models.length;
+      
+      groups.push({
+        models,
+        type: 'pipeline',
+        name,
+        color: '#e24a90',
+        center: [xScale(centerX), yScale(centerY), zScale(centerZ)],
+      });
+    });
+    
+    return groups;
+  }, [showStructuralGroups, sampledData, overviewMode, xScale, yScale, zScale]);
+
+  // Adjust camera for overview mode
+  useEffect(() => {
+    if (!camera) return;
+    
+    const currentPos = new THREE.Vector3();
+    camera.getWorldPosition(currentPos);
+    const distance = currentPos.length();
+    
+    if (overviewMode) {
+      // Move camera further back to see more of the scene
+      const newDistance = Math.max(distance, 8); // Minimum distance for overview
+      
+      if (newDistance > distance) {
+        // Smoothly animate camera back
+        const targetPos = currentPos.clone().normalize().multiplyScalar(newDistance);
+        const startPos = currentPos.clone();
+        const duration = 1000; // 1 second
+        const startTime = Date.now();
+        
+        const animate = () => {
+          const elapsed = Date.now() - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          const eased = 1 - Math.pow(1 - progress, 3); // Ease out cubic
+          
+          const pos = startPos.clone().lerp(targetPos, eased);
+          camera.position.copy(pos);
+          
+          if (progress < 1) {
+            requestAnimationFrame(animate);
+          }
+        };
+        
+        animate();
+      }
+    }
+    // Note: When overview mode is disabled, user can manually zoom back in
+    // We don't force camera position to avoid disrupting user's navigation
+  }, [overviewMode, camera]);
+
   return (
     <>
       <ambientLight intensity={0.5} />
@@ -659,6 +865,64 @@ const SceneContent = memo(function SceneContent({
 
       {/* Grid for orientation - using custom grid to avoid deprecation warnings */}
       <gridHelper args={[10, 10, '#6a6a6a', '#4a4a4a']} />
+
+      {/* Network edges (co-occurrence relationships) */}
+      {networkEdges.length > 0 && (
+        <group>
+          {networkEdges.slice(0, overviewMode ? networkEdges.length : Math.min(networkEdges.length, 5000)).map((edge, i) => (
+            <Line
+              key={`network-${i}`}
+              points={[new THREE.Vector3(...edge.start), new THREE.Vector3(...edge.end)]}
+              color={edge.type === 'library' ? '#4a90e2' : '#e24a90'}
+              lineWidth={overviewMode ? 1.5 : 1}
+              transparent
+              opacity={overviewMode ? 0.2 * edge.weight : 0.3 * edge.weight}
+              dashed={false}
+            />
+          ))}
+        </group>
+      )}
+
+      {/* Structural groupings - show cluster centers and boundaries */}
+      {structuralGroups.map((group, i) => {
+        // Calculate bounding sphere radius from center
+        let maxRadius = 0;
+        group.models.forEach(model => {
+          const modelPos = [
+            xScale(model.x),
+            yScale(model.y),
+            zScale(model.z)
+          ];
+          const dx = modelPos[0] - group.center[0];
+          const dy = modelPos[1] - group.center[1];
+          const dz = modelPos[2] - group.center[2];
+          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          maxRadius = Math.max(maxRadius, distance);
+        });
+        
+        // Add some padding
+        const radius = Math.max(maxRadius * 1.2, 0.2);
+
+        return (
+          <group key={`group-${group.type}-${i}`}>
+            {/* Group center marker */}
+            <mesh position={group.center}>
+              <sphereGeometry args={[0.05, 8, 8]} />
+              <meshBasicMaterial color={group.color} transparent opacity={0.6} />
+            </mesh>
+            {/* Bounding sphere (wireframe) */}
+            <mesh position={group.center}>
+              <sphereGeometry args={[radius, 16, 16]} />
+              <meshBasicMaterial 
+                color={group.color} 
+                wireframe 
+                transparent 
+                opacity={0.15}
+              />
+            </mesh>
+          </group>
+        );
+      })}
 
       {/* Family tree edges with gradient and animation */}
       {familyEdges.map((edge, i) => (
@@ -690,22 +954,22 @@ const SceneContent = memo(function SceneContent({
         />
       ) : (
         sampledData.map((model) => {
-          const isFamilyMember = familyMap.has(model.model_id);
-          const isSelected = selectedModelId === model.model_id;
-          
-          return (
-            <Point
-              key={model.model_id}
-              position={[xScale(model.x), yScale(model.y), zScale(model.z)]}
-              color={colorScale(model)}
-              size={sizeScale(model)}
-              model={model}
-              isSelected={isSelected}
-              isFamilyMember={isFamilyMember}
-              onClick={() => onPointClick?.(model)}
-              onHover={onHover}
-            />
-          );
+        const isFamilyMember = familyMap.has(model.model_id);
+        const isSelected = selectedModelId === model.model_id;
+        
+        return (
+          <Point
+            key={model.model_id}
+            position={[xScale(model.x), yScale(model.y), zScale(model.z)]}
+            color={colorScale(model)}
+            size={sizeScale(model)}
+            model={model}
+            isSelected={isSelected}
+            isFamilyMember={isFamilyMember}
+            onClick={() => onPointClick?.(model)}
+            onHover={onHover}
+          />
+        );
         })
       )}
 
@@ -722,6 +986,10 @@ const SceneContent = memo(function SceneContent({
     prevProps.colorScheme === nextProps.colorScheme &&
     prevProps.selectedModelId === nextProps.selectedModelId &&
     prevProps.isInteracting === nextProps.isInteracting &&
+    prevProps.showNetworkEdges === nextProps.showNetworkEdges &&
+    prevProps.showStructuralGroups === nextProps.showStructuralGroups &&
+    prevProps.overviewMode === nextProps.overviewMode &&
+    prevProps.networkEdgeType === nextProps.networkEdgeType &&
     (prevProps.familyTree?.length || 0) === (nextProps.familyTree?.length || 0)
   );
 });
@@ -781,6 +1049,10 @@ export default function ScatterPlot3D({
   sizeBy,
   colorScheme = 'viridis',
   showLegend = true,
+  showNetworkEdges = false,
+  showStructuralGroups = false,
+  overviewMode = false,
+  networkEdgeType = 'combined',
   onPointClick,
   selectedModelId,
   onViewChange,
@@ -891,7 +1163,7 @@ export default function ScatterPlot3D({
           enableZoom={true}
           enableRotate={true}
           minDistance={1}
-          maxDistance={10}
+          maxDistance={overviewMode ? 15 : 10}
           enableDamping={true}
           dampingFactor={0.05}
         />
@@ -902,6 +1174,10 @@ export default function ScatterPlot3D({
           colorBy={colorBy}
           sizeBy={sizeBy}
           colorScheme={colorScheme}
+          showNetworkEdges={showNetworkEdges}
+          showStructuralGroups={showStructuralGroups}
+          overviewMode={overviewMode}
+          networkEdgeType={networkEdgeType}
           onPointClick={onPointClick}
           selectedModelId={selectedModelId}
           onHover={onHover}
@@ -924,6 +1200,37 @@ export default function ScatterPlot3D({
       >
         <strong>3D Navigation:</strong> Click + drag to rotate | Scroll to zoom | Right-click + drag to pan
       </div>
+      {(overviewMode || showNetworkEdges || showStructuralGroups) && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 10,
+            right: 10,
+            fontSize: '11px',
+            color: '#2c5f2d',
+            backgroundColor: 'rgba(240, 248, 240, 0.95)',
+            padding: '6px 10px',
+            borderRadius: '4px',
+            border: '1px solid #90ee90',
+            fontFamily: "'Vend Sans', sans-serif",
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+          }}
+        >
+          {overviewMode && (
+            <div style={{ fontWeight: '600' }}>🔍 Overview Mode Active</div>
+          )}
+          {showNetworkEdges && (
+            <div style={{ fontSize: '10px' }}>
+              Network: {networkEdgeType === 'combined' ? 'Library + Pipeline' : networkEdgeType}
+            </div>
+          )}
+          {showStructuralGroups && (
+            <div style={{ fontSize: '10px' }}>Structural Groups: Library & Pipeline clusters</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

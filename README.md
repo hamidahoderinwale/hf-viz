@@ -186,10 +186,70 @@ The frontend will open at `http://localhost:3000`
 
 ### Netlify (React Frontend)
 
-1. Deploy frontend to Netlify (set base directory to `frontend`)
-2. Deploy backend to Railway/Render (set root directory to `backend`)
-3. Set `REACT_APP_API_URL` environment variable in Netlify to your backend URL
-4. Update CORS in backend to include your Netlify URL
+The frontend is configured for deployment on Netlify. The `netlify.toml` file in the root directory contains the build configuration.
+
+**Steps to Deploy:**
+
+1. **Push your code to GitHub** (if not already):
+   ```bash
+   git add .
+   git commit -m "Prepare for Netlify deployment"
+   git push origin main
+   ```
+
+2. **Connect to Netlify**:
+   - Go to [Netlify](https://app.netlify.com)
+   - Click "Add new site" → "Import an existing project"
+   - Connect your GitHub repository
+   - Netlify will auto-detect the `netlify.toml` configuration
+
+3. **Configure Environment Variables**:
+   - In Netlify dashboard, go to Site settings → Environment variables
+   - Add `REACT_APP_API_URL` with your backend URL (e.g., `https://your-backend.railway.app`)
+   - If using Hugging Face API, add `REACT_APP_HF_TOKEN` (optional)
+
+4. **Deploy Backend Separately**:
+   - Netlify doesn't support Python/FastAPI backends
+   - Deploy backend to one of these services:
+     - **Railway**: Recommended, easy setup
+     - **Render**: Free tier available
+     - **Fly.io**: Good for Python apps
+     - **Heroku**: Paid option
+   - Update CORS in `backend/api/main.py` to include your Netlify URL
+
+5. **Build Settings** (auto-detected from `netlify.toml`):
+   - Base directory: `frontend`
+   - Build command: `npm install && npm run build`
+   - Publish directory: `frontend/build`
+   - Node version: 18
+
+**Backend Deployment (Railway Example):**
+
+1. Create a new project on [Railway](https://railway.app)
+2. Connect your GitHub repository
+3. Set root directory to `backend`
+4. Railway will auto-detect Python and install dependencies
+5. Add environment variables if needed (HF_TOKEN, etc.)
+6. Railway will provide a URL like `https://your-app.railway.app`
+7. Use this URL as `REACT_APP_API_URL` in Netlify
+
+**CORS Configuration:**
+
+Update `backend/api/main.py` to allow your Netlify domain:
+```python
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",  # Local development
+        "https://your-site.netlify.app",  # Your Netlify URL
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
 
 ## Architecture
 
@@ -229,8 +289,14 @@ The application uses:
 ## Performance Notes
 
 - **Full Dataset**: Loads all ~1.86 million models from the dataset
-- **Visualization Limit**: Maximum 50,000 points for smooth interaction (configurable via `max_points` API parameter)
-- **Level-of-Detail Rendering**: Frontend automatically samples to 10,000 points for 3D visualization while preserving family tree members
+- **Backend Sampling**: Requests up to 500,000 models from backend (configurable via `max_points` API parameter)
+- **Frontend Rendering**: 
+  - For datasets >400K: Shows 30% of models (up to 200K visible)
+  - For datasets 200K-400K: Shows 40% of models
+  - For datasets 100K-200K: Shows 50% of models
+  - For smaller datasets: Shows all models with adaptive spatial sparsity
+  - Uses instanced rendering for datasets >5K points
+  - Camera-based frustum culling and adaptive LOD for optimal performance
 - **Embedding Model**: `all-MiniLM-L6-v2` (good balance of quality and speed)
 - **Caching**: Embeddings and reduced dimensions are cached to disk for fast startup
 - **Optimizations**: Index-based lookups, vectorized operations, response compression, and optimized top-k queries
