@@ -259,7 +259,7 @@ class ImprovedModelCountTracker:
             logger.error(f"Error extracting count from HF models page: {e}", exc_info=True)
             return None
     
-    def get_count_from_dataset_snapshot(self, dataset_name: str = "modelbiome/ai_ecosystem_withmodelcards") -> Optional[Dict]:
+    def get_count_from_dataset_snapshot(self, dataset_name: str = "modelbiome/ai_ecosystem") -> Optional[Dict]:
         """
         Alternative method: Get count from dataset snapshot (like ai-ecosystem repo does).
         This is faster but may be slightly outdated.

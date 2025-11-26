@@ -10,7 +10,7 @@ import numpy as np
 class ModelDataLoader:
     """Load and preprocess model data from Hugging Face dataset."""
     
-    def __init__(self, dataset_name: str = "modelbiome/ai_ecosystem_withmodelcards"):
+    def __init__(self, dataset_name: str = "modelbiome/ai_ecosystem"):
         self.dataset_name = dataset_name
         self.df: Optional[pd.DataFrame] = None
         
