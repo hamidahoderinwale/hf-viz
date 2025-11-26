@@ -13,6 +13,7 @@ export interface ModelPoint {
   licenses: string | null;
   family_depth: number | null;  // Generation depth in family tree (0 = root)
   cluster_id: number | null;    // Cluster assignment for visualization
+  created_at: string | null;    // ISO format date string
 }
 
 export interface FamilyTree {
@@ -53,6 +54,8 @@ export interface Stats {
   unique_libraries: number;
   unique_pipelines: number;  // Deprecated: use unique_task_types
   unique_task_types?: number;  // Number of distinct ML task types (e.g., text-classification, image-classification)
+  unique_licenses?: number;
+  licenses?: Record<string, number>;  // License name -> count mapping
   avg_downloads: number;
   avg_likes: number;
 }

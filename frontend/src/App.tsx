@@ -506,28 +506,24 @@ function App() {
             alignItems: 'center', 
             marginBottom: '1.5rem',
             paddingBottom: '1rem',
-            borderBottom: '2px solid #e8e8e8'
+            borderBottom: '1px solid #e0e0e0'
           }}>
             <h2 style={{ 
               margin: 0,
               fontSize: '1.5rem',
-              fontWeight: '700',
-              background: 'linear-gradient(135deg, #5e35b1 0%, #7b1fa2 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text'
+              fontWeight: '600',
+              color: '#2d2d2d'
             }}>
               Filters & Controls
             </h2>
             {activeFilterCount > 0 && (
               <div style={{ 
                 fontSize: '0.75rem', 
-                background: 'linear-gradient(135deg, #5e35b1 0%, #7b1fa2 100%)',
+                background: '#4a4a4a',
                 color: 'white', 
-                padding: '0.4rem 0.75rem', 
-                borderRadius: '16px',
-                fontWeight: '600',
-                boxShadow: '0 2px 6px rgba(94, 53, 177, 0.3)'
+                padding: '0.35rem 0.7rem', 
+                borderRadius: '12px',
+                fontWeight: '600'
               }}>
                 {activeFilterCount} active
               </div>
@@ -537,40 +533,40 @@ function App() {
           {/* Filter Results Count */}
           {!loading && data.length > 0 && (
             <div className="sidebar-section" style={{ 
-              background: 'linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%)',
-              border: '2px solid #ce93d8',
+              background: '#f5f5f5',
+              border: '1px solid #d0d0d0',
               fontSize: '0.9rem',
               marginBottom: '1.5rem'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                 <div>
-                  <strong style={{ fontSize: '1.1rem', color: '#6a1b9a' }}>
+                  <strong style={{ fontSize: '1.1rem', color: '#2d2d2d' }}>
                     {data.length.toLocaleString()}
                   </strong>
-                  <span style={{ marginLeft: '0.4rem', color: '#4a148c' }}>
+                  <span style={{ marginLeft: '0.4rem', color: '#4a4a4a' }}>
                     {data.length === 1 ? 'model' : 'models'}
                   </span>
                 </div>
                 {embeddingType === 'graph-aware' && (
                   <span style={{ 
                     fontSize: '0.7rem', 
-                    background: '#7b1fa2',
+                    background: '#4a4a4a',
                     color: 'white', 
                     padding: '0.3rem 0.6rem', 
                     borderRadius: '12px',
                     fontWeight: '600'
                   }}>
-                    🌐 Graph
+                    Graph
                   </span>
                 )}
               </div>
               {filteredCount !== null && filteredCount !== data.length && (
-                <div style={{ fontSize: '0.8rem', color: '#6a1b9a', marginTop: '0.25rem' }}>
+                <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.25rem' }}>
                   of {filteredCount.toLocaleString()} matching
                 </div>
               )}
               {stats && filteredCount !== null && filteredCount < stats.total_models && (
-                <div style={{ fontSize: '0.75rem', color: '#8e24aa', marginTop: '0.25rem' }}>
+                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
                   from {stats.total_models.toLocaleString()} total
                 </div>
               )}
@@ -579,15 +575,7 @@ function App() {
 
           {/* Search Section */}
           <div className="sidebar-section">
-            <h3 style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.5rem',
-              color: '#5e35b1',
-              marginBottom: '0.75rem'
-            }}>
-              🔍 Search Models
-            </h3>
+            <h3>Search Models</h3>
             <input
               type="text"
               value={searchQuery}
@@ -602,14 +590,7 @@ function App() {
 
           {/* Popularity Filters */}
           <div className="sidebar-section">
-            <h3 style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.5rem',
-              color: '#5e35b1'
-            }}>
-              📊 Popularity Filters
-            </h3>
+            <h3>Popularity Filters</h3>
             
             <label style={{ marginBottom: '1rem', display: 'block' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
@@ -706,14 +687,7 @@ function App() {
 
           {/* Discovery */}
           <div className="sidebar-section">
-            <h3 style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.5rem',
-              color: '#5e35b1'
-            }}>
-              🎲 Discovery
-            </h3>
+            <h3>Discovery</h3>
             <RandomModelButton
               data={data}
               onSelect={(model: ModelPoint) => {
@@ -727,15 +701,7 @@ function App() {
           {/* Visualization Options */}
           <div className="sidebar-section">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ 
-                margin: 0,
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '0.5rem',
-                color: '#5e35b1'
-              }}>
-                🎨 Visualization
-              </h3>
+              <h3 style={{ margin: 0 }}>Visualization Options</h3>
               <ThemeToggle />
             </div>
             
@@ -862,10 +828,10 @@ function App() {
               </select>
             </label>
 
-            <div className="sidebar-section" style={{ background: '#fff3cd', borderColor: '#ffc107', marginBottom: '1rem', padding: '0.75rem', borderRadius: '4px', border: '1px solid' }}>
+            <div className="sidebar-section" style={{ background: '#f5f5f5', borderColor: '#d0d0d0', marginBottom: '1rem', padding: '0.75rem', borderRadius: '4px', border: '1px solid' }}>
               <label style={{ display: 'block', marginBottom: '0' }}>
-                <span style={{ fontWeight: '600', display: 'block', marginBottom: '0.5rem', color: '#856404' }}>
-                  ⚙️ Projection Method
+                <span style={{ fontWeight: '600', display: 'block', marginBottom: '0.5rem', color: '#2d2d2d' }}>
+                  Projection Method
                 </span>
                 <select 
                   value={projectionMethod} 
@@ -875,7 +841,7 @@ function App() {
                   <option value="umap">UMAP (better global structure)</option>
                   <option value="tsne">t-SNE (better local clusters)</option>
                 </select>
-                <div style={{ fontSize: '0.75rem', color: '#856404', marginTop: '0.5rem', lineHeight: '1.4' }}>
+                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.5rem', lineHeight: '1.4' }}>
                   <strong>UMAP:</strong> Preserves global structure, better for exploring relationships<br/>
                   <strong>t-SNE:</strong> Emphasizes local clusters, better for finding groups
                 </div>
@@ -884,15 +850,8 @@ function App() {
           </div>
 
           {/* View Modes */}
-          <div className="sidebar-section" style={{ background: 'linear-gradient(135deg, #f3e5f5 0%, #fce4ec 100%)', border: '2px solid #f48fb1' }}>
-            <h3 style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.5rem',
-              color: '#5e35b1'
-            }}>
-              ⚡ View Modes
-            </h3>
+          <div className="sidebar-section">
+            <h3>View Modes</h3>
             
             <label style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
               <input
@@ -937,7 +896,7 @@ function App() {
                 style={{ marginRight: '0.5rem', cursor: 'pointer' }}
               />
               <div>
-                <span style={{ fontWeight: '500' }}>🌐 Graph-Aware Embeddings</span>
+                <span style={{ fontWeight: '500' }}>Graph-Aware Embeddings</span>
                 <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
                   Use embeddings that respect family tree structure. Models in the same family will be closer together.
                 </div>
@@ -955,11 +914,11 @@ function App() {
                 color: '#666'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                  <strong style={{ color: embeddingType === 'graph-aware' ? '#2e7d32' : '#666' }}>
-                    {embeddingType === 'graph-aware' ? '🌐 Graph-Aware' : '📝 Text-Only'} Embeddings
+                  <strong style={{ color: '#2d2d2d' }}>
+                    {embeddingType === 'graph-aware' ? 'Graph-Aware' : 'Text-Only'} Embeddings
                   </strong>
                 </div>
-                <div style={{ fontSize: '0.7rem', color: '#888', lineHeight: '1.4' }}>
+                <div style={{ fontSize: '0.7rem', color: '#666', lineHeight: '1.4' }}>
                   {embeddingType === 'graph-aware' 
                     ? 'Models in the same family tree are positioned closer together, revealing hierarchical relationships.'
                     : 'Standard text-based embeddings showing semantic similarity from model descriptions and tags.'}
@@ -1006,15 +965,8 @@ function App() {
 
           {/* Structural Visualization Options */}
           {viewMode === '3d' && (
-            <div className="sidebar-section" style={{ background: 'linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%)', border: '2px solid #aed581' }}>
-              <h3 style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '0.5rem',
-                color: '#5e35b1'
-              }}>
-                🔗 Network Structure
-              </h3>
+            <div className="sidebar-section">
+              <h3>Network Structure</h3>
               <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '1rem', lineHeight: '1.4' }}>
                 Explore relationships and structure in the model ecosystem
               </div>
@@ -1026,12 +978,12 @@ function App() {
                   onChange={(e) => setOverviewMode(e.target.checked)}
                   style={{ marginRight: '0.5rem', cursor: 'pointer' }}
                 />
-                <div>
-                  <span style={{ fontWeight: '500' }}>🔍 Overview Mode</span>
-                  <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
-                    Zoom out to see full ecosystem structure with all relationships visible. Camera will automatically adjust.
-                  </div>
+              <div>
+                <span style={{ fontWeight: '500' }}>Overview Mode</span>
+                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
+                  Zoom out to see full ecosystem structure with all relationships visible. Camera will automatically adjust.
                 </div>
+              </div>
               </label>
 
               <label style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
@@ -1041,12 +993,12 @@ function App() {
                   onChange={(e) => setShowNetworkEdges(e.target.checked)}
                   style={{ marginRight: '0.5rem', cursor: 'pointer' }}
                 />
-                <div>
-                  <span style={{ fontWeight: '500' }}>🌐 Network Relationships</span>
-                  <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
-                    Show connections between related models (same library, pipeline, or tags). Blue = library, Pink = pipeline.
-                  </div>
+              <div>
+                <span style={{ fontWeight: '500' }}>Network Relationships</span>
+                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
+                  Show connections between related models (same library, pipeline, or tags). Blue = library, Pink = pipeline.
                 </div>
+              </div>
               </label>
 
               {showNetworkEdges && (
@@ -1073,26 +1025,19 @@ function App() {
                   onChange={(e) => setShowStructuralGroups(e.target.checked)}
                   style={{ marginRight: '0.5rem', cursor: 'pointer' }}
                 />
-                <div>
-                  <span style={{ fontWeight: '500' }}>📦 Structural Groupings</span>
-                  <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
-                    Highlight clusters and groups with wireframe boundaries. Shows top library and pipeline clusters.
-                  </div>
+              <div>
+                <span style={{ fontWeight: '500' }}>Structural Groupings</span>
+                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
+                  Highlight clusters and groups with wireframe boundaries. Shows top library and pipeline clusters.
                 </div>
+              </div>
               </label>
             </div>
           )}
 
           {/* Quick Filters */}
           <div className="sidebar-section">
-            <h3 style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.5rem',
-              color: '#5e35b1'
-            }}>
-              ⚡ Quick Actions
-            </h3>
+            <h3>Quick Actions</h3>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
               <button
                 onClick={() => {
@@ -1137,14 +1082,7 @@ function App() {
           </div>
 
           <div className="sidebar-section">
-            <h3 style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.5rem',
-              color: '#5e35b1'
-            }}>
-              🌳 Hierarchy Navigation
-            </h3>
+            <h3>Hierarchy Navigation</h3>
             <label style={{ marginBottom: '1rem', display: 'block' }}>
               <span style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem' }}>
                 Max Hierarchy Depth
@@ -1224,14 +1162,7 @@ function App() {
           </div>
 
           <div className="sidebar-section">
-            <h3 style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.5rem',
-              color: '#5e35b1'
-            }}>
-              👥 Family Tree Explorer
-            </h3>
+            <h3>Family Tree Explorer</h3>
             <div style={{ position: 'relative' }}>
               <input
                 type="text"

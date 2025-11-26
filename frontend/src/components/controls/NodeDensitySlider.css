@@ -1,0 +1,31 @@
+.node-density-slider {
+  margin-bottom: 1rem;
+}
+
+.node-density-label {
+  display: block;
+}
+
+.node-density-title {
+  font-weight: 500;
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.node-density-input {
+  width: 100%;
+  cursor: pointer;
+}
+
+.node-density-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.node-density-hint {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #666);
+  margin-top: 0.25rem;
+}
+

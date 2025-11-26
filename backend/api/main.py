@@ -1,202 +1,216 @@
-"""
-FastAPI backend for serving model data to React/Visx frontend.
-"""
 import sys
 import os
-backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
+import pickle
+import tempfile
+import logging
+from typing import Optional, List, Dict
+from datetime import datetime, timedelta
 
+import pandas as pd
+import numpy as np
+import httpx
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from typing import Optional, List, Dict
-import pandas as pd
-import numpy as np
 from pydantic import BaseModel
 from umap import UMAP
-import tempfile
-import traceback
-import httpx
 
 from utils.data_loader import ModelDataLoader
 from utils.embeddings import ModelEmbedder
 from utils.dimensionality_reduction import DimensionReducer
 from utils.network_analysis import ModelNetworkBuilder
+from utils.graph_embeddings import GraphEmbedder
 from services.model_tracker import get_tracker
-from services.model_tracker_improved import get_improved_tracker
 from services.arxiv_api import extract_arxiv_ids, fetch_arxiv_papers
+from core.config import settings
+from core.exceptions import DataNotLoadedError, EmbeddingsNotReadyError
+from models.schemas import ModelPoint
+from utils.family_tree import calculate_family_depths
+import api.dependencies as deps
+from api.routes import models, stats, clusters
 
-app = FastAPI(title="HF Model Ecosystem API")
+# Create aliases for backward compatibility with existing routes
+# Note: These are set at module load time and may be None initially
+# Functions should access via deps.* to get current values
+data_loader = deps.data_loader
+
+backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="HF Model Ecosystem API", version="2.0.0")
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "*",
+    "Access-Control-Allow-Headers": "*",
+}
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Global exception handler that ensures CORS headers are included even on errors."""
-    import traceback
-    error_detail = str(exc)
-    traceback_str = traceback.format_exc()
-    import sys
-    sys.stderr.write(f"Unhandled exception: {error_detail}\n{traceback_str}\n")
+    logger.exception("Unhandled exception", exc_info=exc)
     return JSONResponse(
         status_code=500,
-        content={"detail": error_detail, "error": "Internal server error"},
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "*",
-            "Access-Control-Allow-Headers": "*",
-        }
+        content={"detail": "Internal server error"},
+        headers=CORS_HEADERS,
     )
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
-    """HTTP exception handler with CORS headers."""
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail},
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "*",
-            "Access-Control-Allow-Headers": "*",
-        }
+        headers=CORS_HEADERS,
     )
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Validation exception handler with CORS headers."""
     return JSONResponse(
         status_code=422,
         content={"detail": exc.errors()},
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "*",
-            "Access-Control-Allow-Headers": "*",
-        }
+        headers=CORS_HEADERS,
     )
 
-# CORS middleware for React frontend
-# Update allow_origins with your Netlify URL in production
-# Note: Add your specific Netlify URL after deployment
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
-# Allow all origins for development (restrict in production)
-ALLOW_ALL_ORIGINS = os.getenv("ALLOW_ALL_ORIGINS", "true").lower() == "true"
-if ALLOW_ALL_ORIGINS:
+if settings.ALLOW_ALL_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Allow all origins in development
-        allow_credentials=False,  # Must be False when allow_origins is ["*"]
+        allow_origins=["*"],
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 else:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:3000",  # Local development
-            FRONTEND_URL,  # Production frontend URL
-            # Add your Netlify URL here after deployment, e.g.:
-            # "https://your-app-name.netlify.app",
-        ],
+        allow_origins=["http://localhost:3000", settings.FRONTEND_URL],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-data_loader = ModelDataLoader()
-embedder: Optional[ModelEmbedder] = None
-reducer: Optional[DimensionReducer] = None
-df: Optional[pd.DataFrame] = None
-embeddings: Optional[np.ndarray] = None
-reduced_embeddings: Optional[np.ndarray] = None
-cluster_labels: Optional[np.ndarray] = None  # Cached cluster assignments
 
-
-class FilterParams(BaseModel):
-    min_downloads: int = 0
-    min_likes: int = 0
-    search_query: Optional[str] = None
-    libraries: Optional[List[str]] = None
-    pipeline_tags: Optional[List[str]] = None
-
-
-class ModelPoint(BaseModel):
-    model_id: str
-    x: float
-    y: float
-    z: float  # 3D coordinate
-    library_name: Optional[str]
-    pipeline_tag: Optional[str]
-    downloads: int
-    likes: int
-    trending_score: Optional[float]
-    tags: Optional[str]
-    parent_model: Optional[str] = None
-    licenses: Optional[str] = None
-    family_depth: Optional[int] = None  # Generation depth in family tree (0 = root)
-    cluster_id: Optional[int] = None    # Cluster assignment for visualization
-
+# Include routers
+app.include_router(models.router)
+app.include_router(stats.router)
+app.include_router(clusters.router)
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize data and models on startup with caching."""
-    global df, embedder, reducer, embeddings, reduced_embeddings
+    # All variables are accessed via deps module, no need for global declarations
     
-    import os
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     root_dir = os.path.dirname(backend_dir)
     cache_dir = os.path.join(root_dir, "cache")
     os.makedirs(cache_dir, exist_ok=True)
     
     embeddings_cache = os.path.join(cache_dir, "embeddings.pkl")
+    graph_embeddings_cache = os.path.join(cache_dir, "graph_embeddings.pkl")
+    combined_embeddings_cache = os.path.join(cache_dir, "combined_embeddings.pkl")
     reduced_cache_umap = os.path.join(cache_dir, "reduced_umap_3d.pkl")
+    reduced_cache_umap_graph = os.path.join(cache_dir, "reduced_umap_3d_graph.pkl")
     reducer_cache_umap = os.path.join(cache_dir, "reducer_umap_3d.pkl")
+    reducer_cache_umap_graph = os.path.join(cache_dir, "reducer_umap_3d_graph.pkl")
     
-    sample_size_env = os.getenv("SAMPLE_SIZE")
-    if sample_size_env is None:
-        sample_size = None
+    sample_size = settings.get_sample_size()
+    if sample_size:
+        logger.info(f"Loading limited dataset: {sample_size} models (SAMPLE_SIZE={sample_size})")
     else:
-        sample_size = int(sample_size_env)
-        if sample_size == 0:
-            sample_size = None
-    df = data_loader.load_data(sample_size=sample_size)
-    df = data_loader.preprocess_for_embedding(df)
+        logger.info("No SAMPLE_SIZE set, loading full dataset")
     
-    if 'model_id' in df.columns:
-        df.set_index('model_id', drop=False, inplace=True)
+    deps.df = deps.data_loader.load_data(sample_size=sample_size)
+    deps.df = deps.data_loader.preprocess_for_embedding(deps.df)
+    
+    if 'model_id' in deps.df.columns:
+        deps.df.set_index('model_id', drop=False, inplace=True)
     for col in ['downloads', 'likes']:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+        if col in deps.df.columns:
+            deps.df[col] = pd.to_numeric(deps.df[col], errors='coerce').fillna(0).astype(int)
     
-    embedder = ModelEmbedder()
+    deps.embedder = ModelEmbedder()
     
+    # Load or generate text embeddings
     if os.path.exists(embeddings_cache):
         try:
-            embeddings = embedder.load_embeddings(embeddings_cache)
+            deps.embeddings = deps.embedder.load_embeddings(embeddings_cache)
+        except (IOError, pickle.UnpicklingError, EOFError) as e:
+            logger.warning(f"Failed to load cached embeddings: {e}")
+            deps.embeddings = None
+    
+    if deps.embeddings is None:
+        texts = deps.df['combined_text'].tolist()
+        deps.embeddings = deps.embedder.generate_embeddings(texts, batch_size=128)
+        deps.embedder.save_embeddings(deps.embeddings, embeddings_cache)
+    
+    # Initialize graph embedder and generate graph embeddings (optional, lazy-loaded)
+    if settings.USE_GRAPH_EMBEDDINGS:
+        try:
+            deps.graph_embedder = GraphEmbedder()
+            logger.info("Building family graph for graph embeddings...")
+            graph = deps.graph_embedder.build_family_graph(deps.df)
+            
+            if os.path.exists(graph_embeddings_cache):
+                try:
+                    deps.graph_embeddings_dict = deps.graph_embedder.load_embeddings(graph_embeddings_cache)
+                    logger.info(f"Loaded cached graph embeddings for {len(deps.graph_embeddings_dict)} models")
+                except (IOError, pickle.UnpicklingError, EOFError) as e:
+                    logger.warning(f"Failed to load cached graph embeddings: {e}")
+                    deps.graph_embeddings_dict = None
+            
+            if deps.graph_embeddings_dict is None or len(deps.graph_embeddings_dict) == 0:
+                logger.info("Generating graph embeddings (this may take a while)...")
+                deps.graph_embeddings_dict = deps.graph_embedder.generate_graph_embeddings(graph, workers=4)
+                if deps.graph_embeddings_dict:
+                    deps.graph_embedder.save_embeddings(deps.graph_embeddings_dict, graph_embeddings_cache)
+                    logger.info(f"Generated graph embeddings for {len(deps.graph_embeddings_dict)} models")
+            
+            # Combine text and graph embeddings
+            if deps.graph_embeddings_dict and len(deps.graph_embeddings_dict) > 0:
+                model_ids = deps.df['model_id'].astype(str).tolist()
+                if os.path.exists(combined_embeddings_cache):
+                    try:
+                        with open(combined_embeddings_cache, 'rb') as f:
+                            deps.combined_embeddings = pickle.load(f)
+                        logger.info("Loaded cached combined embeddings")
+                    except (IOError, pickle.UnpicklingError, EOFError) as e:
+                        logger.warning(f"Failed to load cached combined embeddings: {e}")
+                        deps.combined_embeddings = None
+                
+                if deps.combined_embeddings is None:
+                    logger.info("Combining text and graph embeddings...")
+                    deps.combined_embeddings = deps.graph_embedder.combine_embeddings(
+                        deps.embeddings, deps.graph_embeddings_dict, model_ids,
+                        text_weight=0.7, graph_weight=0.3
+                    )
+                    with open(combined_embeddings_cache, 'wb') as f:
+                        pickle.dump(deps.combined_embeddings, f)
+                    logger.info("Combined embeddings saved")
         except Exception as e:
-            embeddings = None
+            logger.warning(f"Graph embeddings not available: {e}. Continuing with text-only embeddings.")
+            deps.graph_embedder = None
+            deps.graph_embeddings_dict = None
+            deps.combined_embeddings = None
     
-    if embeddings is None:
-        texts = df['combined_text'].tolist()
-        embeddings = embedder.generate_embeddings(texts, batch_size=128)
-        embedder.save_embeddings(embeddings, embeddings_cache)
-    
-    reducer = DimensionReducer(method="umap", n_components=3)
+    # Initialize reducer for text embeddings
+    deps.reducer = DimensionReducer(method="umap", n_components=3)
     
     if os.path.exists(reduced_cache_umap) and os.path.exists(reducer_cache_umap):
         try:
-            import pickle
             with open(reduced_cache_umap, 'rb') as f:
-                reduced_embeddings = pickle.load(f)
-            reducer.load_reducer(reducer_cache_umap)
-        except Exception as e:
-            reduced_embeddings = None
+                deps.reduced_embeddings = pickle.load(f)
+            deps.reducer.load_reducer(reducer_cache_umap)
+        except (IOError, pickle.UnpicklingError, EOFError) as e:
+            logger.warning(f"Failed to load cached reduced embeddings: {e}")
+            deps.reduced_embeddings = None
     
-    if reduced_embeddings is None:
-        reducer.reducer = UMAP(
+    if deps.reduced_embeddings is None:
+        deps.reducer.reducer = UMAP(
             n_components=3,
             n_neighbors=30,
             min_dist=0.3,
@@ -206,61 +220,57 @@ async def startup_event():
             low_memory=True,
             spread=1.5
         )
-        reduced_embeddings = reducer.fit_transform(embeddings)
-        import pickle
+        deps.reduced_embeddings = deps.reducer.fit_transform(deps.embeddings)
         with open(reduced_cache_umap, 'wb') as f:
-            pickle.dump(reduced_embeddings, f)
-        reducer.save_reducer(reducer_cache_umap)
+            pickle.dump(deps.reduced_embeddings, f)
+        deps.reducer.save_reducer(reducer_cache_umap)
+    
+    # Initialize reducer for graph-aware embeddings if available
+    if deps.combined_embeddings is not None:
+        reducer_graph = DimensionReducer(method="umap", n_components=3)
+        
+        if os.path.exists(reduced_cache_umap_graph) and os.path.exists(reducer_cache_umap_graph):
+            try:
+                with open(reduced_cache_umap_graph, 'rb') as f:
+                    deps.reduced_embeddings_graph = pickle.load(f)
+                reducer_graph.load_reducer(reducer_cache_umap_graph)
+            except (IOError, pickle.UnpicklingError, EOFError) as e:
+                logger.warning(f"Failed to load cached graph-aware reduced embeddings: {e}")
+                deps.reduced_embeddings_graph = None
+        
+        if deps.reduced_embeddings_graph is None:
+            reducer_graph.reducer = UMAP(
+                n_components=3,
+                n_neighbors=30,
+                min_dist=0.3,
+                metric='cosine',
+                random_state=42,
+                n_jobs=-1,
+                low_memory=True,
+                spread=1.5
+            )
+            deps.reduced_embeddings_graph = reducer_graph.fit_transform(deps.combined_embeddings)
+            with open(reduced_cache_umap_graph, 'wb') as f:
+                pickle.dump(deps.reduced_embeddings_graph, f)
+            reducer_graph.save_reducer(reducer_cache_umap_graph)
+            logger.info("Graph-aware embeddings reduced and cached")
+    
+    # Update module-level aliases
+    df = deps.df
+    embedder = deps.embedder
+    graph_embedder = deps.graph_embedder
+    reducer = deps.reducer
+    embeddings = deps.embeddings
+    graph_embeddings_dict = deps.graph_embeddings_dict
+    combined_embeddings = deps.combined_embeddings
+    reduced_embeddings = deps.reduced_embeddings
+    reduced_embeddings_graph = deps.reduced_embeddings_graph
 
 
-def calculate_family_depths(df: pd.DataFrame) -> Dict[str, int]:
-    """
-    Calculate family tree depth for each model.
-    Returns a dictionary mapping model_id to depth (0 = root, 1 = first generation, etc.)
-    """
-    depths = {}
-    visited = set()
-    
-    def get_depth(model_id: str) -> int:
-        if model_id in depths:
-            return depths[model_id]
-        if model_id in visited:
-            # Circular reference, treat as root
-            depths[model_id] = 0
-            return 0
-        
-        visited.add(model_id)
-        
-        if model_id not in df.index:
-            depths[model_id] = 0
-            return 0
-        
-        parent_id = df.loc[model_id].get('parent_model')
-        if parent_id and pd.notna(parent_id) and str(parent_id) != 'nan' and str(parent_id) != '':
-            parent_id_str = str(parent_id)
-            if parent_id_str in df.index:
-                depth = get_depth(parent_id_str) + 1
-            else:
-                depth = 0  # Parent not in dataset, treat as root
-        else:
-            depth = 0  # No parent, this is a root
-        
-        depths[model_id] = depth
-        return depth
-    
-    for model_id in df.index:
-        if model_id not in depths:
-            visited = set()  # Reset for each tree
-            get_depth(model_id)
-    
-    return depths
+from utils.family_tree import calculate_family_depths
 
 
 def compute_clusters(reduced_embeddings: np.ndarray, n_clusters: int = 50) -> np.ndarray:
-    """
-    Compute clusters using KMeans on reduced embeddings.
-    Returns cluster labels for each point.
-    """
     from sklearn.cluster import KMeans
     
     n_samples = len(reduced_embeddings)
@@ -268,8 +278,7 @@ def compute_clusters(reduced_embeddings: np.ndarray, n_clusters: int = 50) -> np
         n_clusters = max(1, n_samples // 10)
     
     kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-    cluster_labels = kmeans.fit_predict(reduced_embeddings)
-    return cluster_labels
+    return kmeans.fit_predict(reduced_embeddings)
 
 
 @app.get("/")
@@ -284,24 +293,16 @@ async def get_models(
     search_query: Optional[str] = Query(None),
     color_by: str = Query("library_name"),
     size_by: str = Query("downloads"),
-    max_points: Optional[int] = Query(None),  # Optional limit (None = all points)
-    projection_method: str = Query("umap"),  # umap or tsne
-    base_models_only: bool = Query(False)  # Only show root models (no parent)
+    max_points: Optional[int] = Query(None),
+    projection_method: str = Query("umap"),
+    base_models_only: bool = Query(False),
+    max_hierarchy_depth: Optional[int] = Query(None, ge=0, description="Filter to models at or below this hierarchy depth."),
+    use_graph_embeddings: bool = Query(False, description="Use graph-aware embeddings that respect family tree structure")
 ):
-    """
-    Get filtered models with 3D coordinates for visualization.
-    Supports multiple projection methods: UMAP or t-SNE.
-    If base_models_only=True, only returns root models (models without a parent_model).
+    if deps.df is None:
+        raise DataNotLoadedError()
     
-    Returns a JSON object with:
-    - models: List of ModelPoint objects
-    - filtered_count: Number of models matching filters (before max_points sampling)
-    - returned_count: Number of models actually returned (after max_points sampling)
-    """
-    global df, embedder, reducer, embeddings, reduced_embeddings
-    
-    if df is None:
-        raise HTTPException(status_code=503, detail="Data not loaded")
+    df = deps.df
     
     # Filter data
     filtered_df = data_loader.filter_data(
@@ -321,7 +322,12 @@ async def get_models(
                 (filtered_df['parent_model'].astype(str) == 'nan')
             ]
     
-    # Store the filtered count BEFORE sampling
+    if max_hierarchy_depth is not None:
+        family_depths = calculate_family_depths(df)
+        filtered_df = filtered_df[
+            filtered_df['model_id'].astype(str).map(lambda x: family_depths.get(x, 0) <= max_hierarchy_depth)
+        ]
+    
     filtered_count = len(filtered_df)
     
     if len(filtered_df) == 0:
@@ -332,42 +338,53 @@ async def get_models(
         }
     
     if max_points is not None and len(filtered_df) > max_points:
-        # Use stratified sampling to preserve distribution of important attributes
-        # Sample proportionally from different libraries/pipelines for better representation
         if 'library_name' in filtered_df.columns and filtered_df['library_name'].notna().any():
-            # Stratified sampling by library
-            filtered_df = filtered_df.groupby('library_name', group_keys=False).apply(
-                lambda x: x.sample(min(len(x), max(1, int(max_points * len(x) / len(filtered_df)))), random_state=42)
-            ).reset_index(drop=True)
-            # If still too many, random sample the rest
+            # Sample proportionally by library, preserving all columns
+            sampled_dfs = []
+            for lib_name, group in filtered_df.groupby('library_name', group_keys=False):
+                n_samples = max(1, int(max_points * len(group) / len(filtered_df)))
+                sampled_dfs.append(group.sample(min(len(group), n_samples), random_state=42))
+            filtered_df = pd.concat(sampled_dfs, ignore_index=True)
             if len(filtered_df) > max_points:
-                filtered_df = filtered_df.sample(n=max_points, random_state=42)
+                filtered_df = filtered_df.sample(n=max_points, random_state=42).reset_index(drop=True)
+            else:
+                filtered_df = filtered_df.reset_index(drop=True)
         else:
-            filtered_df = filtered_df.sample(n=max_points, random_state=42)
+            filtered_df = filtered_df.sample(n=max_points, random_state=42).reset_index(drop=True)
     
-    if embeddings is None:
-        raise HTTPException(status_code=503, detail="Embeddings not loaded")
+    # Determine which embeddings to use
+    if use_graph_embeddings and combined_embeddings is not None:
+        current_embeddings = combined_embeddings
+        current_reduced = reduced_embeddings_graph
+        embedding_type = "graph-aware"
+    else:
+        if embeddings is None:
+            raise EmbeddingsNotReadyError()
+        current_embeddings = embeddings
+        current_reduced = reduced_embeddings
+        embedding_type = "text-only"
     
-    if reduced_embeddings is None or (reducer and reducer.method != projection_method.lower()):
-        import os
+    # Handle reduced embeddings loading/generation
+    if current_reduced is None or (reducer and reducer.method != projection_method.lower()):
         backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         root_dir = os.path.dirname(backend_dir)
         cache_dir = os.path.join(root_dir, "cache")
-        reduced_cache = os.path.join(cache_dir, f"reduced_{projection_method.lower()}_3d.pkl")
-        reducer_cache = os.path.join(cache_dir, f"reducer_{projection_method.lower()}_3d.pkl")
+        cache_suffix = "_graph" if use_graph_embeddings and combined_embeddings is not None else ""
+        reduced_cache = os.path.join(cache_dir, f"reduced_{projection_method.lower()}_3d{cache_suffix}.pkl")
+        reducer_cache = os.path.join(cache_dir, f"reducer_{projection_method.lower()}_3d{cache_suffix}.pkl")
         
         if os.path.exists(reduced_cache) and os.path.exists(reducer_cache):
             try:
-                import pickle
                 with open(reduced_cache, 'rb') as f:
-                    reduced_embeddings = pickle.load(f)
+                    current_reduced = pickle.load(f)
                 if reducer is None or reducer.method != projection_method.lower():
                     reducer = DimensionReducer(method=projection_method.lower(), n_components=3)
                 reducer.load_reducer(reducer_cache)
-            except Exception as e:
-                reduced_embeddings = None
+            except (IOError, pickle.UnpicklingError, EOFError) as e:
+                logger.warning(f"Failed to load cached reduced embeddings: {e}")
+                current_reduced = None
         
-        if reduced_embeddings is None:
+        if current_reduced is None:
             if reducer is None or reducer.method != projection_method.lower():
                 reducer = DimensionReducer(method=projection_method.lower(), n_components=3)
                 if projection_method.lower() == "umap":
@@ -381,52 +398,91 @@ async def get_models(
                         low_memory=True,
                         spread=1.5
                     )
-            reduced_embeddings = reducer.fit_transform(embeddings)
-            import pickle
+            current_reduced = reducer.fit_transform(current_embeddings)
             with open(reduced_cache, 'wb') as f:
-                pickle.dump(reduced_embeddings, f)
+                pickle.dump(current_reduced, f)
             reducer.save_reducer(reducer_cache)
+            
+            # Update global variable
+            if use_graph_embeddings and deps.combined_embeddings is not None:
+                deps.reduced_embeddings_graph = current_reduced
+            else:
+                deps.reduced_embeddings = current_reduced
     
-    # Get coordinates for filtered data - optimized vectorized approach
-    # Map filtered dataframe indices to original dataframe integer positions
-    # Since df is indexed by model_id, we need to get the integer positions
+    # Get indices for filtered data
+    # Use model_id column to map between filtered_df and original df
+    # This is safer than using index positions which can change after filtering
+    filtered_model_ids = filtered_df['model_id'].astype(str).values
+    
+    # Map model_ids to positions in original df
     if df.index.name == 'model_id' or 'model_id' in df.index.names:
-        # Get integer positions of filtered rows in original dataframe
-        # Use vectorized lookup for better performance
-        filtered_indices = np.array([df.index.get_loc(idx) for idx in filtered_df.index], dtype=np.int32)
+        # When df is indexed by model_id, use get_loc directly
+        filtered_indices = []
+        for model_id in filtered_model_ids:
+            try:
+                pos = df.index.get_loc(model_id)
+                # Handle both single position and array of positions
+                if isinstance(pos, (int, np.integer)):
+                    filtered_indices.append(int(pos))
+                elif isinstance(pos, (slice, np.ndarray)):
+                    # If multiple matches, take first
+                    if isinstance(pos, slice):
+                        filtered_indices.append(int(pos.start))
+                    else:
+                        filtered_indices.append(int(pos[0]))
+            except (KeyError, TypeError):
+                continue
+        filtered_indices = np.array(filtered_indices, dtype=np.int32)
     else:
-        # If using integer index, use directly
-        filtered_indices = filtered_df.index.values.astype(np.int32)
+        # When df is not indexed by model_id, find positions by matching model_id column
+        df_model_ids = df['model_id'].astype(str).values
+        model_id_to_pos = {mid: pos for pos, mid in enumerate(df_model_ids)}
+        filtered_indices = np.array([
+            model_id_to_pos[mid] for mid in filtered_model_ids 
+            if mid in model_id_to_pos
+        ], dtype=np.int32)
     
-    # Use advanced indexing for faster access
-    filtered_reduced = reduced_embeddings[filtered_indices]
+    if len(filtered_indices) == 0:
+        return {
+            "models": [],
+            "embedding_type": embedding_type,
+            "filtered_count": filtered_count,
+            "returned_count": 0
+        }
     
+    filtered_reduced = current_reduced[filtered_indices]
     family_depths = calculate_family_depths(df)
     
-    global cluster_labels
-    if cluster_labels is None or len(cluster_labels) != len(reduced_embeddings):
-        cluster_labels = compute_clusters(reduced_embeddings, n_clusters=min(50, len(reduced_embeddings) // 100))
+    # Use appropriate embeddings for clustering
+    clustering_embeddings = current_reduced
+    # Compute clusters if not already computed or if size changed
+    if models.cluster_labels is None or len(models.cluster_labels) != len(clustering_embeddings):
+        models.cluster_labels = compute_clusters(clustering_embeddings, n_clusters=min(50, len(clustering_embeddings) // 100))
     
-    filtered_clusters = cluster_labels[filtered_indices]
+    # Handle case where cluster_labels might not match filtered data yet
+    if models.cluster_labels is not None and len(models.cluster_labels) > 0:
+        if len(filtered_indices) <= len(models.cluster_labels):
+            filtered_clusters = models.cluster_labels[filtered_indices]
+        else:
+            # Fallback: use first cluster for all if indices don't match
+            filtered_clusters = np.zeros(len(filtered_indices), dtype=int)
+    else:
+        filtered_clusters = np.zeros(len(filtered_indices), dtype=int)
     
-    # Build response with optimized vectorized operations
-    # Pre-extract arrays for faster access
     model_ids = filtered_df['model_id'].astype(str).values
-    library_names = filtered_df['library_name'].values
-    pipeline_tags = filtered_df['pipeline_tag'].values
-    downloads_arr = filtered_df['downloads'].fillna(0).astype(int).values
-    likes_arr = filtered_df['likes'].fillna(0).astype(int).values
-    trending_scores = filtered_df.get('trendingScore', pd.Series()).values
-    tags_arr = filtered_df.get('tags', pd.Series()).values
-    parent_models = filtered_df.get('parent_model', pd.Series()).values
-    licenses_arr = filtered_df.get('licenses', pd.Series()).values
+    library_names = filtered_df.get('library_name', pd.Series([None] * len(filtered_df))).values
+    pipeline_tags = filtered_df.get('pipeline_tag', pd.Series([None] * len(filtered_df))).values
+    downloads_arr = filtered_df.get('downloads', pd.Series([0] * len(filtered_df))).fillna(0).astype(int).values
+    likes_arr = filtered_df.get('likes', pd.Series([0] * len(filtered_df))).fillna(0).astype(int).values
+    trending_scores = filtered_df.get('trendingScore', pd.Series([None] * len(filtered_df))).values
+    tags_arr = filtered_df.get('tags', pd.Series([None] * len(filtered_df))).values
+    parent_models = filtered_df.get('parent_model', pd.Series([None] * len(filtered_df))).values
+    licenses_arr = filtered_df.get('licenses', pd.Series([None] * len(filtered_df))).values
+    created_at_arr = filtered_df.get('createdAt', pd.Series([None] * len(filtered_df))).values
     
-    # Vectorized coordinate extraction
     x_coords = filtered_reduced[:, 0].astype(float)
     y_coords = filtered_reduced[:, 1].astype(float)
     z_coords = filtered_reduced[:, 2].astype(float) if filtered_reduced.shape[1] > 2 else np.zeros(len(filtered_reduced), dtype=float)
-    
-    # Build models list with optimized operations
     models = [
         ModelPoint(
             model_id=model_ids[idx],
@@ -442,28 +498,42 @@ async def get_models(
             parent_model=parent_models[idx] if idx < len(parent_models) and pd.notna(parent_models[idx]) else None,
             licenses=licenses_arr[idx] if idx < len(licenses_arr) and pd.notna(licenses_arr[idx]) else None,
             family_depth=family_depths.get(model_ids[idx], None),
-            cluster_id=int(filtered_clusters[idx]) if idx < len(filtered_clusters) else None
+            cluster_id=int(filtered_clusters[idx]) if idx < len(filtered_clusters) else None,
+            created_at=str(created_at_arr[idx]) if idx < len(created_at_arr) and pd.notna(created_at_arr[idx]) else None
         )
         for idx in range(len(filtered_df))
     ]
     
-    return models
+    # Return models with metadata about embedding type
+    return {
+        "models": models,
+        "embedding_type": embedding_type,
+        "filtered_count": filtered_count,
+        "returned_count": len(models)
+    }
 
 
 @app.get("/api/stats")
 async def get_stats():
     """Get dataset statistics."""
     if df is None:
-        raise HTTPException(status_code=503, detail="Data not loaded")
+        raise DataNotLoadedError()
     
-    # Use len(df.index) to handle both regular and indexed DataFrames correctly
     total_models = len(df.index) if hasattr(df, 'index') else len(df)
+    
+    # Get unique licenses with counts
+    licenses = {}
+    if 'license' in df.columns:
+        license_counts = df['license'].value_counts().to_dict()
+        licenses = {str(k): int(v) for k, v in license_counts.items() if pd.notna(k) and str(k) != 'nan'}
     
     return {
         "total_models": total_models,
         "unique_libraries": int(df['library_name'].nunique()) if 'library_name' in df.columns else 0,
         "unique_pipelines": int(df['pipeline_tag'].nunique()) if 'pipeline_tag' in df.columns else 0,
         "unique_task_types": int(df['pipeline_tag'].nunique()) if 'pipeline_tag' in df.columns else 0,  # Alias for clarity
+        "unique_licenses": len(licenses),
+        "licenses": licenses,  # License name -> count mapping
         "avg_downloads": float(df['downloads'].mean()) if 'downloads' in df.columns else 0,
         "avg_likes": float(df['likes'].mean()) if 'likes' in df.columns else 0
     }
@@ -473,7 +543,7 @@ async def get_stats():
 async def get_model_details(model_id: str):
     """Get detailed information about a specific model."""
     if df is None:
-        raise HTTPException(status_code=503, detail="Data not loaded")
+        raise DataNotLoadedError()
     
     model = df[df.get('model_id', '') == model_id]
     if len(model) == 0:
@@ -481,11 +551,9 @@ async def get_model_details(model_id: str):
     
     model = model.iloc[0]
     
-    # Extract arXiv IDs from tags
     tags_str = str(model.get('tags', '')) if pd.notna(model.get('tags')) else ''
     arxiv_ids = extract_arxiv_ids(tags_str)
     
-    # Fetch arXiv papers if any IDs found
     papers = []
     if arxiv_ids:
         papers = await fetch_arxiv_papers(arxiv_ids[:5])  # Limit to 5 papers
@@ -505,6 +573,8 @@ async def get_model_details(model_id: str):
     }
 
 
+# Clusters endpoint is handled by routes/clusters.py router
+
 @app.get("/api/family/stats")
 async def get_family_stats():
     """
@@ -512,9 +582,8 @@ async def get_family_stats():
     Returns family size distribution, depth statistics, model card length by depth, etc.
     """
     if df is None:
-        raise HTTPException(status_code=503, detail="Data not loaded")
+        raise DataNotLoadedError()
     
-    # Calculate family sizes
     family_sizes = {}
     root_models = set()
     
@@ -528,14 +597,13 @@ async def get_family_stats():
                 family_sizes[model_id] = 0
         else:
             parent_id_str = str(parent_id)
-            # Find root of this family
             root = parent_id_str
             visited = set()
             while root in df.index and pd.notna(df.loc[root].get('parent_model')):
                 parent = df.loc[root].get('parent_model')
                 if pd.isna(parent) or str(parent) == 'nan' or str(parent) == '':
                     break
-                if str(parent) in visited:  # Circular reference
+                if str(parent) in visited:
                     break
                 visited.add(root)
                 root = str(parent)
@@ -544,18 +612,15 @@ async def get_family_stats():
                 family_sizes[root] = 0
             family_sizes[root] += 1
     
-    # Count family sizes
     size_distribution = {}
     for root, size in family_sizes.items():
         size_distribution[size] = size_distribution.get(size, 0) + 1
     
-    # Calculate depth statistics
     depths = calculate_family_depths(df)
     depth_counts = {}
     for depth in depths.values():
         depth_counts[depth] = depth_counts.get(depth, 0) + 1
     
-    # Calculate model card length by depth
     model_card_lengths_by_depth = {}
     if 'modelCard' in df.columns:
         for idx, row in df.iterrows():
@@ -568,7 +633,6 @@ async def get_family_stats():
                     model_card_lengths_by_depth[depth] = []
                 model_card_lengths_by_depth[depth].append(card_length)
     
-    # Calculate statistics for each depth
     model_card_stats = {}
     for depth, lengths in model_card_lengths_by_depth.items():
         if lengths:
@@ -593,99 +657,218 @@ async def get_family_stats():
     }
 
 
+@app.get("/api/family/path/{model_id}")
+async def get_family_path(
+    model_id: str,
+    target_id: Optional[str] = Query(None, description="Target model ID. If None, returns path to root.")
+):
+    """
+    Get path from model to root or to target model.
+    Returns list of model IDs representing the path.
+    """
+    if df is None:
+        raise DataNotLoadedError()
+    
+    model_id_str = str(model_id)
+    
+    if df.index.name == 'model_id':
+        if model_id_str not in df.index:
+            raise HTTPException(status_code=404, detail="Model not found")
+    else:
+        model_rows = df[df.get('model_id', '') == model_id_str]
+        if len(model_rows) == 0:
+            raise HTTPException(status_code=404, detail="Model not found")
+    
+    path = [model_id_str]
+    visited = set([model_id_str])
+    current = model_id_str
+    
+    if target_id:
+        target_str = str(target_id)
+        if df.index.name == 'model_id':
+            if target_str not in df.index:
+                raise HTTPException(status_code=404, detail="Target model not found")
+        
+        while current != target_str and current not in visited:
+            try:
+                if df.index.name == 'model_id':
+                    row = df.loc[current]
+                else:
+                    rows = df[df.get('model_id', '') == current]
+                    if len(rows) == 0:
+                        break
+                    row = rows.iloc[0]
+                
+                parent_id = row.get('parent_model')
+                if parent_id and pd.notna(parent_id):
+                    parent_str = str(parent_id)
+                    if parent_str == target_str:
+                        path.append(parent_str)
+                        break
+                    if parent_str not in visited:
+                        path.append(parent_str)
+                        visited.add(parent_str)
+                        current = parent_str
+                    else:
+                        break
+                else:
+                    break
+            except (KeyError, IndexError):
+                break
+    else:
+        while True:
+            try:
+                if df.index.name == 'model_id':
+                    row = df.loc[current]
+                else:
+                    rows = df[df.get('model_id', '') == current]
+                    if len(rows) == 0:
+                        break
+                    row = rows.iloc[0]
+                
+                parent_id = row.get('parent_model')
+                if parent_id and pd.notna(parent_id):
+                    parent_str = str(parent_id)
+                    if parent_str not in visited:
+                        path.append(parent_str)
+                        visited.add(parent_str)
+                        current = parent_str
+                    else:
+                        break
+                else:
+                    break
+            except (KeyError, IndexError):
+                break
+    
+    return {
+        "path": path,
+        "source": model_id_str,
+        "target": target_id if target_id else "root",
+        "path_length": len(path) - 1
+    }
+
+
 @app.get("/api/family/{model_id}")
-async def get_family_tree(model_id: str, max_depth: int = Query(5, ge=1, le=10)):
+async def get_family_tree(
+    model_id: str, 
+    max_depth: Optional[int] = Query(None, ge=1, le=100, description="Maximum depth to traverse. If None, traverses entire tree without limit."),
+    max_depth_filter: Optional[int] = Query(None, ge=0, description="Filter results to models at or below this hierarchy depth.")
+):
     """
     Get family tree for a model (ancestors and descendants).
     Returns the model, its parent chain, and all children.
+    
+    If max_depth is None, traverses the entire family tree without depth limits.
     """
     if df is None:
-        raise HTTPException(status_code=503, detail="Data not loaded")
+        raise DataNotLoadedError()
     
-    # Find the model
-    model_row = df[df.get('model_id', '') == model_id]
-    if len(model_row) == 0:
-        raise HTTPException(status_code=404, detail="Model not found")
-    
-    family_models = []
-    visited = set()
-    
-    # Get coordinates for family members
     if reduced_embeddings is None:
         raise HTTPException(status_code=503, detail="Embeddings not ready")
     
-    # Optimize: create parent_model index for faster lookups
-    if 'parent_model' not in df.index.names and 'parent_model' in df.columns:
-        # Create a reverse index for faster parent lookups
-        parent_index = df[df['parent_model'].notna()].set_index('parent_model', drop=False, append=True)
+    model_id_str = str(model_id)
     
-    def get_ancestors(current_id: str, depth: int):
-        """Recursively get parent chain - optimized with index lookup."""
-        if depth <= 0 or current_id in visited:
+    if df.index.name == 'model_id':
+        if model_id_str not in df.index:
+            raise HTTPException(status_code=404, detail="Model not found")
+        model_lookup = df.loc
+    else:
+        model_rows = df[df.get('model_id', '') == model_id_str]
+        if len(model_rows) == 0:
+            raise HTTPException(status_code=404, detail="Model not found")
+        model_lookup = lambda x: df[df.get('model_id', '') == x]
+    
+    from utils.network_analysis import _get_all_parents, _parse_parent_list
+    
+    children_index: Dict[str, List[str]] = {}
+    parent_columns = ['parent_model', 'finetune_parent', 'quantized_parent', 'adapter_parent', 'merge_parent']
+    
+    for idx, row in df.iterrows():
+        model_id_from_row = str(row.get('model_id', idx))
+        all_parents = _get_all_parents(row)
+        
+        for rel_type, parent_list in all_parents.items():
+            for parent_str in parent_list:
+                if parent_str not in children_index:
+                    children_index[parent_str] = []
+                children_index[parent_str].append(model_id_from_row)
+    
+    visited = set()
+    
+    def get_ancestors(current_id: str, depth: Optional[int]):
+        if current_id in visited:
+            return
+        if depth is not None and depth <= 0:
             return
         visited.add(current_id)
         
-        # Use index lookup if available, otherwise fallback to query
-        if 'model_id' in df.index.names or df.index.name == 'model_id':
-            try:
-                model = df.loc[[current_id]]
-            except KeyError:
-                return
-        else:
-            model = df[df.get('model_id', '') == current_id]
-            if len(model) == 0:
-                return
-            model = model.iloc[[0]]
-        
-        parent_id = model.iloc[0].get('parent_model')
-        
-        if parent_id and pd.notna(parent_id) and str(parent_id) != 'nan':
-            get_ancestors(str(parent_id), depth - 1)
+        try:
+            if df.index.name == 'model_id':
+                row = df.loc[current_id]
+            else:
+                rows = model_lookup(current_id)
+                if len(rows) == 0:
+                    return
+                row = rows.iloc[0]
+            
+            all_parents = _get_all_parents(row)
+            for rel_type, parent_list in all_parents.items():
+                for parent_str in parent_list:
+                    if parent_str != 'nan' and parent_str != '':
+                        next_depth = depth - 1 if depth is not None else None
+                        get_ancestors(parent_str, next_depth)
+        except (KeyError, IndexError):
+            return
     
-    def get_descendants(current_id: str, depth: int):
-        """Recursively get all children - optimized with index lookup."""
-        if depth <= 0 or current_id in visited:
+    def get_descendants(current_id: str, depth: Optional[int]):
+        if current_id in visited:
+            return
+        if depth is not None and depth <= 0:
             return
         visited.add(current_id)
         
-        # Use optimized parent lookup
-        if 'parent_model' in df.columns:
-            children = df[df['parent_model'] == current_id]
-            # Use vectorized iteration
-            child_ids = children['model_id'].dropna().astype(str).unique()
-            for child_id in child_ids:
-                if child_id not in visited:
-                    get_descendants(child_id, depth - 1)
+        children = children_index.get(current_id, [])
+        for child_id in children:
+            if child_id not in visited:
+                next_depth = depth - 1 if depth is not None else None
+                get_descendants(child_id, next_depth)
     
-    # Get ancestors (parents)
-    get_ancestors(model_id, max_depth)
+    get_ancestors(model_id_str, max_depth)
+    visited = set()
+    get_descendants(model_id_str, max_depth)
+    visited.add(model_id_str)
     
-    # Get descendants (children)
-    visited = set()  # Reset for descendants
-    get_descendants(model_id, max_depth)
-    
-    # Add the root model
-    visited.add(model_id)
-    
-    # Get all family members with coordinates - optimized
-    if 'model_id' in df.index.names or df.index.name == 'model_id':
-        # Use index lookup if available
+    if df.index.name == 'model_id':
         try:
             family_df = df.loc[list(visited)]
         except KeyError:
-            # Fallback to isin if some IDs not in index
-            family_df = df[df.get('model_id', '').isin(visited)]
+            missing = [v for v in visited if v not in df.index]
+            if missing:
+                logger.warning(f"Some family members not found in index: {missing}")
+            family_df = df.loc[[v for v in visited if v in df.index]]
     else:
         family_df = df[df.get('model_id', '').isin(visited)]
     
-    family_indices = family_df.index.values  # Use values instead of tolist() for speed
+    if len(family_df) == 0:
+        raise HTTPException(status_code=404, detail="Family tree data not available")
+    
+    family_indices = family_df.index.values
+    if len(family_indices) > len(reduced_embeddings):
+        raise HTTPException(status_code=503, detail="Embedding indices mismatch")
+    
     family_reduced = reduced_embeddings[family_indices]
     
-    # Build family tree structure - optimized with vectorized operations
     family_map = {}
     for idx, (i, row) in enumerate(family_df.iterrows()):
-        model_id_val = str(row.get('model_id', 'Unknown'))
-        parent_id = row.get('parent_model') if pd.notna(row.get('parent_model')) else None
+        model_id_val = str(row.get('model_id', i))
+        parent_id = row.get('parent_model')
+        parent_id_str = str(parent_id) if parent_id and pd.notna(parent_id) else None
+        
+        depths = calculate_family_depths(df)
+        model_depth = depths.get(model_id_val, 0)
+        
+        if max_depth_filter is not None and model_depth > max_depth_filter:
+            continue
         
         family_map[model_id_val] = {
             "model_id": model_id_val,
@@ -696,12 +879,12 @@ async def get_family_tree(model_id: str, max_depth: int = Query(5, ge=1, le=10))
             "pipeline_tag": str(row.get('pipeline_tag')) if pd.notna(row.get('pipeline_tag')) else None,
             "downloads": int(row.get('downloads', 0)) if pd.notna(row.get('downloads')) else 0,
             "likes": int(row.get('likes', 0)) if pd.notna(row.get('likes')) else 0,
-            "parent_model": str(parent_id) if parent_id else None,
+            "parent_model": parent_id_str,
             "licenses": str(row.get('licenses')) if pd.notna(row.get('licenses')) else None,
+            "family_depth": model_depth,
             "children": []
         }
     
-    # Build tree structure
     root_models = []
     for model_id_val, model_data in family_map.items():
         parent_id = model_data["parent_model"]
@@ -711,7 +894,7 @@ async def get_family_tree(model_id: str, max_depth: int = Query(5, ge=1, le=10))
             root_models.append(model_id_val)
     
     return {
-        "root_model": model_id,
+        "root_model": model_id_str,
         "family": list(family_map.values()),
         "family_map": family_map,
         "root_models": root_models
@@ -720,7 +903,9 @@ async def get_family_tree(model_id: str, max_depth: int = Query(5, ge=1, le=10))
 
 @app.get("/api/search")
 async def search_models(
-    query: str = Query(..., min_length=1),
+    q: str = Query(..., min_length=1, alias="query"),
+    query: str = Query(None, min_length=1),
+    limit: int = Query(20, ge=1, le=100),
     graph_aware: bool = Query(False),
     include_neighbors: bool = Query(True)
 ):
@@ -729,47 +914,79 @@ async def search_models(
     Enhanced with graph-aware search option that includes network relationships.
     """
     if df is None:
-        raise HTTPException(status_code=503, detail="Data not loaded")
+        raise DataNotLoadedError()
+    
+    # Support both 'q' and 'query' parameters
+    search_query = query or q
     
     if graph_aware:
-        # Use graph-aware search
         try:
             network_builder = ModelNetworkBuilder(df)
-            # Build network for top models (for performance)
             top_models = network_builder.get_top_models_by_field(n=1000)
             model_ids = [mid for mid, _ in top_models]
             graph = network_builder.build_cooccurrence_network(model_ids, cooccurrence_method='combined')
             
             results = network_builder.search_graph_aware(
-                query=query,
+                query=search_query,
                 graph=graph,
-                max_results=20,
+                max_results=limit,
                 include_neighbors=include_neighbors
             )
             
-            return {"results": results, "search_type": "graph_aware"}
-        except Exception as e:
-            pass
+            return {"results": results, "search_type": "graph_aware", "query": search_query}
+        except (ValueError, KeyError, AttributeError) as e:
+            logger.warning(f"Graph-aware search failed, falling back to basic search: {e}")
     
-    query_lower = query.lower()
-    matches = df[
-        df.get('model_id', '').astype(str).str.lower().str.contains(query_lower, na=False)
-    ].head(20)  # Limit to 20 results
+    query_lower = search_query.lower()
+    
+    # Enhanced search: search model_id, org, tags, library, pipeline
+    model_id_col = df.get('model_id', '').astype(str).str.lower()
+    library_col = df.get('library_name', '').astype(str).str.lower()
+    pipeline_col = df.get('pipeline_tag', '').astype(str).str.lower()
+    tags_col = df.get('tags', '').astype(str).str.lower()
+    license_col = df.get('license', '').astype(str).str.lower()
+    
+    # Extract org from model_id
+    org_col = model_id_col.str.split('/').str[0]
+    
+    # Multi-field search
+    mask = (
+        model_id_col.str.contains(query_lower, na=False) |
+        org_col.str.contains(query_lower, na=False) |
+        library_col.str.contains(query_lower, na=False) |
+        pipeline_col.str.contains(query_lower, na=False) |
+        tags_col.str.contains(query_lower, na=False) |
+        license_col.str.contains(query_lower, na=False)
+    )
+    
+    matches = df[mask].head(limit)
     
     results = []
     for _, row in matches.iterrows():
+        model_id = str(row.get('model_id', ''))
+        org = model_id.split('/')[0] if '/' in model_id else ''
+        
+        # Get coordinates if available
+        x = float(row.get('x', 0.0)) if 'x' in row else None
+        y = float(row.get('y', 0.0)) if 'y' in row else None
+        z = float(row.get('z', 0.0)) if 'z' in row else None
+        
         results.append({
-            "model_id": row.get('model_id'),
-            "title": row.get('model_id', '').split('/')[-1] if '/' in str(row.get('model_id', '')) else str(row.get('model_id', '')),
-            "library_name": row.get('library_name'),
-            "pipeline_tag": row.get('pipeline_tag'),
+            "model_id": model_id,
+            "x": x,
+            "y": y,
+            "z": z,
+            "org": org,
+            "library": row.get('library_name'),
+            "pipeline": row.get('pipeline_tag'),
+            "license": row.get('license') if pd.notna(row.get('license')) else None,
             "downloads": int(row.get('downloads', 0)),
             "likes": int(row.get('likes', 0)),
             "parent_model": row.get('parent_model') if pd.notna(row.get('parent_model')) else None,
             "match_type": "direct"
         })
     
-    return {"results": results, "search_type": "basic"}
+    return {"results": results, "search_type": "basic", "query": search_query}
 
 
 @app.get("/api/similar/{model_id}")
@@ -778,12 +995,12 @@ async def get_similar_models(model_id: str, k: int = Query(10, ge=1, le=50)):
     Get k-nearest neighbors of a model based on embedding similarity.
     Returns similar models with distance scores.
     """
-    global df, embedder, embeddings, reduced_embeddings
-    
-    if df is None or embeddings is None:
+    if deps.df is None or deps.embeddings is None:
         raise HTTPException(status_code=503, detail="Data not loaded")
     
-    # Find the model - optimized with index lookup
+    df = deps.df
+    embeddings = deps.embeddings
+    
     if 'model_id' in df.index.names or df.index.name == 'model_id':
         try:
             model_row = df.loc[[model_id]]
@@ -797,16 +1014,11 @@ async def get_similar_models(model_id: str, k: int = Query(10, ge=1, le=50)):
         model_idx = model_row.index[0]
     model_embedding = embeddings[model_idx]
     
-    # Calculate cosine similarity to all other models - optimized
     from sklearn.metrics.pairwise import cosine_similarity
-    # Use vectorized operations for better performance
     model_embedding_2d = model_embedding.reshape(1, -1)
     similarities = cosine_similarity(model_embedding_2d, embeddings)[0]
     
-    # Get top k similar models (excluding itself) - use argpartition for speed
-    # argpartition is faster than full sort for top-k
     top_k_indices = np.argpartition(similarities, -k-1)[-k-1:-1]
-    # Sort only the top k (much faster than sorting all)
     top_k_indices = top_k_indices[np.argsort(similarities[top_k_indices])][::-1]
     
     similar_models = []
@@ -817,7 +1029,7 @@ async def get_similar_models(model_id: str, k: int = Query(10, ge=1, le=50)):
         similar_models.append({
             "model_id": row.get('model_id', 'Unknown'),
             "similarity": float(similarities[idx]),
-            "distance": float(1 - similarities[idx]),  # Convert similarity to distance
+            "distance": float(1 - similarities[idx]),
             "library_name": row.get('library_name'),
             "pipeline_tag": row.get('pipeline_tag'),
             "downloads": int(row.get('downloads', 0)),
@@ -843,10 +1055,11 @@ async def get_models_by_semantic_similarity(
     Returns models with their similarity scores and coordinates.
     Useful for exploring the embedding space around a specific model.
     """
-    global df, embedder, embeddings, reduced_embeddings
-    
-    if df is None or embeddings is None:
+    if deps.df is None or deps.embeddings is None:
         raise HTTPException(status_code=503, detail="Data not loaded")
+    
+    df = deps.df
+    embeddings = deps.embeddings
     
     # Find the query model
     if 'model_id' in df.index.names or df.index.name == 'model_id':
@@ -863,7 +1076,6 @@ async def get_models_by_semantic_similarity(
     
     query_embedding = embeddings[model_idx]
     
-    # Filter by downloads/likes first for performance
     filtered_df = data_loader.filter_data(
         df=df,
         min_downloads=min_downloads,
@@ -873,32 +1085,26 @@ async def get_models_by_semantic_similarity(
         pipeline_tags=None
     )
     
-    # Get indices of filtered models
     if df.index.name == 'model_id' or 'model_id' in df.index.names:
         filtered_indices = [df.index.get_loc(idx) for idx in filtered_df.index]
         filtered_indices = np.array(filtered_indices, dtype=int)
     else:
         filtered_indices = filtered_df.index.values.astype(int)
     
-    # Calculate similarities only for filtered models
     filtered_embeddings = embeddings[filtered_indices]
     from sklearn.metrics.pairwise import cosine_similarity
     query_embedding_2d = query_embedding.reshape(1, -1)
     similarities = cosine_similarity(query_embedding_2d, filtered_embeddings)[0]
     
-    # Get top k similar models
     top_k_local_indices = np.argpartition(similarities, -k)[-k:]
     top_k_local_indices = top_k_local_indices[np.argsort(similarities[top_k_local_indices])][::-1]
     
-    # Get reduced embeddings for visualization
     if reduced_embeddings is None:
         raise HTTPException(status_code=503, detail="Reduced embeddings not ready")
     
-    # Map back to original indices
     top_k_original_indices = filtered_indices[top_k_local_indices]
     top_k_reduced = reduced_embeddings[top_k_original_indices]
     
-    # Build response
     similar_models = []
     for i, orig_idx in enumerate(top_k_original_indices):
         row = df.iloc[orig_idx]
@@ -935,10 +1141,11 @@ async def get_distance(
     """
     Calculate distance/similarity between two models.
     """
-    global df, embedder, embeddings
-    
-    if df is None or embeddings is None:
+    if deps.df is None or deps.embeddings is None:
         raise HTTPException(status_code=503, detail="Data not loaded")
+    
+    df = deps.df
+    embeddings = deps.embeddings
     
     # Find both models - optimized with index lookup
     if 'model_id' in df.index.names or df.index.name == 'model_id':
@@ -976,7 +1183,7 @@ async def export_models(model_ids: List[str]):
     Export selected models as JSON with full metadata.
     """
     if df is None:
-        raise HTTPException(status_code=503, detail="Data not loaded")
+        raise DataNotLoadedError()
     
     # Optimized export with index lookup
     if 'model_id' in df.index.names or df.index.name == 'model_id':
@@ -991,7 +1198,6 @@ async def export_models(model_ids: List[str]):
     if len(exported) == 0:
         return {"models": []}
     
-    # Use list comprehension for faster building
     models = [
         {
             "model_id": str(row.get('model_id', '')),
@@ -1029,12 +1235,10 @@ async def get_cooccurrence_network(
     Returns network graph data suitable for visualization.
     """
     if df is None:
-        raise HTTPException(status_code=503, detail="Data not loaded")
+        raise DataNotLoadedError()
     
     try:
         network_builder = ModelNetworkBuilder(df)
-        
-        # Get top models by field
         top_models = network_builder.get_top_models_by_field(
             library=library,
             pipeline_tag=pipeline_tag,
@@ -1051,14 +1255,11 @@ async def get_cooccurrence_network(
             }
         
         model_ids = [mid for mid, _ in top_models]
-        
-        # Build co-occurrence network
         graph = network_builder.build_cooccurrence_network(
             model_ids=model_ids,
             cooccurrence_method=cooccurrence_method
         )
         
-        # Convert to JSON-serializable format
         nodes = []
         for node_id, attrs in graph.nodes(data=True):
             nodes.append({
@@ -1086,45 +1287,70 @@ async def get_cooccurrence_network(
             "links": links,
             "statistics": stats
         }
-    
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError) as e:
+        logger.error(f"Error building network: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error building network: {str(e)}")
 
 
 @app.get("/api/network/family/{model_id}")
 async def get_family_network(
     model_id: str,
-    max_depth: int = Query(5, ge=1, le=10)
+    max_depth: Optional[int] = Query(None, ge=1, le=100, description="Maximum depth to traverse. If None, traverses entire tree without limit."),
+    edge_types: Optional[str] = Query(None, description="Comma-separated list of edge types to include (finetune,quantized,adapter,merge,parent). If None, includes all types."),
+    include_edge_attributes: bool = Query(True, description="Whether to include edge attributes (change in likes, downloads, etc.)")
 ):
     """
     Build family tree network for a model (directed graph).
-    Returns network graph data showing parent-child relationships.
+    Returns network graph data showing parent-child relationships with multiple relationship types.
+    Supports filtering by edge type (finetune, quantized, adapter, merge, parent).
     """
     if df is None:
-        raise HTTPException(status_code=503, detail="Data not loaded")
+        raise DataNotLoadedError()
     
     try:
+        filter_types = None
+        if edge_types:
+            filter_types = [t.strip() for t in edge_types.split(',') if t.strip()]
+        
         network_builder = ModelNetworkBuilder(df)
         graph = network_builder.build_family_tree_network(
             root_model_id=model_id,
-            max_depth=max_depth
+            max_depth=max_depth,
+            include_edge_attributes=include_edge_attributes,
+            filter_edge_types=filter_types
         )
         
-        # Convert to JSON-serializable format
         nodes = []
         for node_id, attrs in graph.nodes(data=True):
             nodes.append({
                 "id": node_id,
                 "title": attrs.get('title', node_id),
-                "freq": attrs.get('freq', 0)
+                "freq": attrs.get('freq', 0),
+                "likes": attrs.get('likes', 0),
+                "downloads": attrs.get('downloads', 0),
+                "library": attrs.get('library', ''),
+                "pipeline": attrs.get('pipeline', '')
             })
         
         links = []
-        for source, target in graph.edges():
-            links.append({
+        for source, target, edge_attrs in graph.edges(data=True):
+            link_data = {
                 "source": source,
-                "target": target
-            })
+                "target": target,
+                "edge_type": edge_attrs.get('edge_type'),
+                "edge_types": edge_attrs.get('edge_types', [])
+            }
+            
+            if include_edge_attributes:
+                link_data.update({
+                    "change_in_likes": edge_attrs.get('change_in_likes'),
+                    "percentage_change_in_likes": edge_attrs.get('percentage_change_in_likes'),
+                    "change_in_downloads": edge_attrs.get('change_in_downloads'),
+                    "percentage_change_in_downloads": edge_attrs.get('percentage_change_in_downloads'),
+                    "change_in_createdAt_days": edge_attrs.get('change_in_createdAt_days')
+                })
+            
+            links.append(link_data)
         
         stats = network_builder.get_network_statistics(graph)
         
@@ -1134,8 +1360,8 @@ async def get_family_network(
             "statistics": stats,
             "root_model": model_id
         }
-    
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError) as e:
+        logger.error(f"Error building family network: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error building family network: {str(e)}")
 
 
@@ -1150,11 +1376,10 @@ async def get_model_neighbors(
     Similar to graph database queries for finding connected nodes.
     """
     if df is None:
-        raise HTTPException(status_code=503, detail="Data not loaded")
+        raise DataNotLoadedError()
     
     try:
         network_builder = ModelNetworkBuilder(df)
-        # Build network for top models (for performance)
         top_models = network_builder.get_top_models_by_field(n=1000)
         model_ids = [mid for mid, _ in top_models]
         graph = network_builder.build_cooccurrence_network(model_ids, cooccurrence_method='combined')
@@ -1171,8 +1396,8 @@ async def get_model_neighbors(
             "neighbors": neighbors,
             "count": len(neighbors)
         }
-    
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError) as e:
+        logger.error(f"Error finding neighbors: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error finding neighbors: {str(e)}")
 
 
@@ -1187,7 +1412,7 @@ async def find_path_between_models(
     Similar to graph database path queries.
     """
     if df is None:
-        raise HTTPException(status_code=503, detail="Data not loaded")
+        raise DataNotLoadedError()
     
     try:
         network_builder = ModelNetworkBuilder(df)
@@ -1235,7 +1460,7 @@ async def search_by_cooccurrence(
     Similar to graph database queries for co-assignment patterns.
     """
     if df is None:
-        raise HTTPException(status_code=503, detail="Data not loaded")
+        raise DataNotLoadedError()
     
     try:
         network_builder = ModelNetworkBuilder(df)
@@ -1272,7 +1497,7 @@ async def get_model_relationships(
     Similar to graph database relationship queries.
     """
     if df is None:
-        raise HTTPException(status_code=503, detail="Data not loaded")
+        raise DataNotLoadedError()
     
     try:
         network_builder = ModelNetworkBuilder(df)
@@ -1297,32 +1522,57 @@ async def get_model_relationships(
 async def get_current_model_count(
     use_cache: bool = Query(True),
     force_refresh: bool = Query(False),
-    use_dataset_snapshot: bool = Query(False)
+    use_dataset_snapshot: bool = Query(False),
+    use_models_page: bool = Query(True)
 ):
     """
     Get the current number of models on Hugging Face Hub.
-    Fetches live data from the Hub API or uses dataset snapshot (faster but may be outdated).
+    Uses multiple strategies: models page scraping (fastest), dataset snapshot, or API.
     
     Query Parameters:
         use_cache: Use cached results if available (default: True)
         force_refresh: Force refresh even if cache is valid (default: False)
-        use_dataset_snapshot: Use dataset snapshot instead of API (faster, default: False)
+        use_dataset_snapshot: Use dataset snapshot for breakdowns (default: False)
+        use_models_page: Try to get count from HF models page first (default: True)
     """
     try:
+        tracker = get_tracker()
+        
         if use_dataset_snapshot:
-            # Use improved tracker with dataset snapshot (like ai-ecosystem repo)
-            tracker = get_improved_tracker()
-            count_data = tracker.get_count_from_dataset_snapshot()
+            count_data = tracker.get_count_from_models_page()
             if count_data is None:
-                # Fallback to API if dataset unavailable
-                count_data = tracker.get_current_model_count(use_cache=use_cache, force_refresh=force_refresh)
+                count_data = tracker.get_current_model_count(use_models_page=False)
+            else:
+                try:
+                    from utils.data_loader import ModelDataLoader
+                    data_loader = ModelDataLoader()
+                    df = data_loader.load_data(sample_size=10000)
+                    library_counts = {}
+                    pipeline_counts = {}
+                    
+                    for _, row in df.iterrows():
+                        if pd.notna(row.get('library_name')):
+                            lib = str(row.get('library_name'))
+                            library_counts[lib] = library_counts.get(lib, 0) + 1
+                        if pd.notna(row.get('pipeline_tag')):
+                            pipeline = str(row.get('pipeline_tag'))
+                            pipeline_counts[pipeline] = pipeline_counts.get(pipeline, 0) + 1
+                    
+                    if len(df) > 0 and count_data["total_models"] > len(df):
+                        scale_factor = count_data["total_models"] / len(df)
+                        library_counts = {k: int(v * scale_factor) for k, v in library_counts.items()}
+                        pipeline_counts = {k: int(v * scale_factor) for k, v in pipeline_counts.items()}
+                    
+                    count_data["models_by_library"] = library_counts
+                    count_data["models_by_pipeline"] = pipeline_counts
+                except Exception as e:
+                    logger.warning(f"Could not get breakdowns from dataset: {e}")
         else:
-            # Use improved tracker with API (has caching)
-            tracker = get_improved_tracker()
-            count_data = tracker.get_current_model_count(use_cache=use_cache, force_refresh=force_refresh)
+            count_data = tracker.get_current_model_count(use_models_page=use_models_page)
         
         return count_data
     except Exception as e:
+        logger.error(f"Error fetching model count: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error fetching model count: {str(e)}")
 
 
@@ -1343,7 +1593,7 @@ async def get_historical_model_counts(
     try:
         from datetime import datetime
         
-        tracker = get_improved_tracker()
+        tracker = get_tracker()
         
         start = None
         end = None
@@ -1373,7 +1623,7 @@ async def get_historical_model_counts(
 async def get_latest_model_count():
     """Get the most recently recorded model count from database."""
     try:
-        tracker = get_improved_tracker()
+        tracker = get_tracker()
         latest = tracker.get_latest_count()
         if latest is None:
             raise HTTPException(status_code=404, detail="No model counts recorded yet")
@@ -1397,16 +1647,14 @@ async def record_model_count(
         use_dataset_snapshot: Use dataset snapshot instead of API (faster, default: False)
     """
     try:
-        tracker = get_improved_tracker()
+        tracker = get_tracker()
         
-        # Fetch and record in background to avoid blocking
         def record():
             if use_dataset_snapshot:
                 count_data = tracker.get_count_from_dataset_snapshot()
                 if count_data:
                     tracker.record_count(count_data, source="dataset_snapshot")
                 else:
-                    # Fallback to API
                     count_data = tracker.get_current_model_count(use_cache=False)
                     tracker.record_count(count_data, source="api")
             else:
@@ -1433,7 +1681,7 @@ async def get_growth_stats(days: int = Query(7, ge=1, le=365)):
         days: Number of days to analyze
     """
     try:
-        tracker = get_improved_tracker()
+        tracker = get_tracker()
         stats = tracker.get_growth_stats(days)
         return stats
     except Exception as e:
@@ -1455,12 +1703,11 @@ async def export_network_graphml(
     Similar to Open Syllabus graph export functionality.
     """
     if df is None:
-        raise HTTPException(status_code=503, detail="Data not loaded")
+        raise DataNotLoadedError()
     
     try:
         network_builder = ModelNetworkBuilder(df)
         
-        # Get top models by field
         top_models = network_builder.get_top_models_by_field(
             library=library,
             pipeline_tag=pipeline_tag,
@@ -1473,29 +1720,24 @@ async def export_network_graphml(
             raise HTTPException(status_code=404, detail="No models found matching criteria")
         
         model_ids = [mid for mid, _ in top_models]
-        
-        # Build co-occurrence network
         graph = network_builder.build_cooccurrence_network(
             model_ids=model_ids,
             cooccurrence_method=cooccurrence_method
         )
         
-        # Create temporary file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.graphml', delete=False) as tmp_file:
             tmp_path = tmp_file.name
             network_builder.export_graphml(graph, tmp_path)
         
-        # Schedule cleanup after response is sent
         background_tasks.add_task(os.unlink, tmp_path)
         
-        # Return file for download
         return FileResponse(
             tmp_path,
             media_type='application/xml',
             filename=f'network_{cooccurrence_method}_{n}_models.graphml'
         )
-    
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, IOError) as e:
+        logger.error(f"Error exporting network: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error exporting network: {str(e)}")
 
 
@@ -1506,7 +1748,7 @@ async def get_model_papers(model_id: str):
     Extracts arXiv IDs from model tags and fetches paper information.
     """
     if df is None:
-        raise HTTPException(status_code=503, detail="Data not loaded")
+        raise DataNotLoadedError()
     
     model = df[df.get('model_id', '') == model_id]
     if len(model) == 0:
@@ -1535,36 +1777,131 @@ async def get_model_papers(model_id: str):
     }
 
 
+@app.get("/api/models/minimal.bin")
+async def get_minimal_binary():
+    """
+    Serve the binary minimal dataset file.
+    This is optimized for fast client-side loading.
+    """
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    root_dir = os.path.dirname(backend_dir)
+    binary_path = os.path.join(root_dir, "cache", "binary", "embeddings.bin")
+    
+    if not os.path.exists(binary_path):
+        raise HTTPException(status_code=404, detail="Binary dataset not found. Run export_binary.py first.")
+    
+    return FileResponse(
+        binary_path,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": "attachment; filename=embeddings.bin",
+            "Cache-Control": "public, max-age=3600"
+        }
+    )
+
+
+@app.get("/api/models/model_ids.json")
+async def get_model_ids_json():
+    """Serve the model IDs JSON file."""
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    root_dir = os.path.dirname(backend_dir)
+    json_path = os.path.join(root_dir, "cache", "binary", "model_ids.json")
+    
+    if not os.path.exists(json_path):
+        raise HTTPException(status_code=404, detail="Model IDs file not found.")
+    
+    return FileResponse(
+        json_path,
+        media_type="application/json",
+        headers={"Cache-Control": "public, max-age=3600"}
+    )
+
+
+@app.get("/api/models/metadata.json")
+async def get_metadata_json():
+    """Serve the metadata JSON file with lookup tables."""
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    root_dir = os.path.dirname(backend_dir)
+    json_path = os.path.join(root_dir, "cache", "binary", "metadata.json")
+    
+    if not os.path.exists(json_path):
+        raise HTTPException(status_code=404, detail="Metadata file not found.")
+    
+    return FileResponse(
+        json_path,
+        media_type="application/json",
+        headers={"Cache-Control": "public, max-age=3600"}
+    )
+
+
 @app.get("/api/model/{model_id}/files")
 async def get_model_files(model_id: str, branch: str = Query("main")):
     """
     Get file tree for a model from Hugging Face.
     Proxies the request to avoid CORS issues.
+    Returns a flat list of files with path and size information.
     """
+    if not model_id or not model_id.strip():
+        raise HTTPException(status_code=400, detail="Invalid model ID")
+    
+    branches_to_try = [branch, "main", "master"] if branch not in ["main", "master"] else [branch, "main" if branch == "master" else "master"]
+    
     try:
-        # Try main branch first, then master
-        branches_to_try = [branch, "main", "master"] if branch not in ["main", "master"] else [branch, "main" if branch == "master" else "master"]
-        
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             for branch_name in branches_to_try:
                 try:
                     url = f"https://huggingface.co/api/models/{model_id}/tree/{branch_name}"
                     response = await client.get(url)
+                    
                     if response.status_code == 200:
-                        return response.json()
-                except Exception:
+                        data = response.json()
+                        # Ensure we return an array
+                        if isinstance(data, list):
+                            return data
+                        elif isinstance(data, dict) and 'tree' in data:
+                            return data['tree']
+                        else:
+                            return []
+                    
+                    elif response.status_code == 404:
+                        # Try next branch
+                        continue
+                    else:
+                        logger.warning(f"Unexpected status {response.status_code} for {url}")
+                        continue
+                        
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 404:
+                        continue  # Try next branch
+                    logger.warning(f"HTTP error for branch {branch_name}: {e}")
+                    continue
+                except httpx.HTTPError as e:
+                    logger.warning(f"HTTP error for branch {branch_name}: {e}")
                     continue
             
-            raise HTTPException(status_code=404, detail="File tree not found for this model")
+            # All branches failed
+            raise HTTPException(
+                status_code=404, 
+                detail=f"File tree not found for model '{model_id}'. The model may not exist or may not have any files."
+            )
+            
     except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Request to Hugging Face timed out")
+        raise HTTPException(
+            status_code=504, 
+            detail="Request to Hugging Face timed out. Please try again later."
+        )
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching file tree: {str(e)}")
+        logger.error(f"Error fetching file tree: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error fetching file tree: {str(e)}"
+        )
 
 
 if __name__ == "__main__":
     import uvicorn
-    # Use PORT environment variable for cloud platforms (Railway, Render, Heroku)
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
 

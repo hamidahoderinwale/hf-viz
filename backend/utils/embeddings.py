@@ -27,7 +27,7 @@ class ModelEmbedder:
     def generate_embeddings(
         self,
         texts: List[str],
-        batch_size: int = 128,  # Increased default batch size for speed
+        batch_size: int = 128,
         show_progress: bool = True
     ) -> np.ndarray:
         """

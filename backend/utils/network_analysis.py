@@ -1,6 +1,7 @@
 """
 Network analysis module inspired by Open Syllabus Project.
 Builds co-occurrence networks for models based on shared contexts.
+Supports multiple relationship types: finetune, quantized, adapter, merge.
 """
 import pandas as pd
 import numpy as np
@@ -8,12 +9,66 @@ from collections import Counter
 from itertools import combinations
 from typing import List, Dict, Tuple, Optional, Set
 import networkx as nx
+import ast
+from datetime import datetime
+
+
+def _parse_parent_list(value) -> List[str]:
+    """
+    Parse parent model list from string/eval format.
+    Handles both string representations and actual lists.
+    """
+    if pd.isna(value) or value == '' or str(value) == 'nan':
+        return []
+    
+    try:
+        if isinstance(value, str):
+            if value.startswith('[') or value.startswith('('):
+                parsed = ast.literal_eval(value)
+            else:
+                parsed = [value]
+        else:
+            parsed = value
+        
+        if isinstance(parsed, list):
+            return [str(p) for p in parsed if p and str(p) != 'nan']
+        elif parsed:
+            return [str(parsed)]
+        else:
+            return []
+    except (ValueError, SyntaxError):
+        return []
+
+
+def _get_all_parents(row: pd.Series) -> Dict[str, List[str]]:
+    """
+    Extract all parent types from a row.
+    Returns dict mapping relationship type to list of parent IDs.
+    """
+    parents = {}
+    
+    parent_columns = {
+        'parent_model': 'parent',
+        'finetune_parent': 'finetune',
+        'quantized_parent': 'quantized',
+        'adapter_parent': 'adapter',
+        'merge_parent': 'merge'
+    }
+    
+    for col, rel_type in parent_columns.items():
+        if col in row:
+            parent_list = _parse_parent_list(row.get(col))
+            if parent_list:
+                parents[rel_type] = parent_list
+    
+    return parents
 
 
 class ModelNetworkBuilder:
     """
     Build network graphs for models based on co-occurrence patterns.
     Similar to Open Syllabus approach of connecting texts that appear together.
+    Supports multiple relationship types: finetune, quantized, adapter, merge.
     """
     
     def __init__(self, df: pd.DataFrame):
@@ -22,13 +77,13 @@ class ModelNetworkBuilder:
         
         Args:
             df: DataFrame with model data including model_id, library_name, 
-                pipeline_tag, tags, parent_model, downloads, likes
+                pipeline_tag, tags, parent_model, finetune_parent, quantized_parent,
+                adapter_parent, merge_parent, downloads, likes, createdAt
         """
         self.df = df.copy()
         if 'model_id' not in self.df.columns:
             raise ValueError("DataFrame must contain 'model_id' column")
         
-        # Ensure model_id is index for fast lookups
         if self.df.index.name != 'model_id':
             if 'model_id' in self.df.columns:
                 self.df.set_index('model_id', drop=False, inplace=True)
@@ -208,23 +263,41 @@ class ModelNetworkBuilder:
     def build_family_tree_network(
         self,
         root_model_id: str,
-        max_depth: int = 5
+        max_depth: Optional[int] = 5,
+        include_edge_attributes: bool = True,
+        filter_edge_types: Optional[List[str]] = None
     ) -> nx.DiGraph:
         """
-        Build directed graph of model family tree.
+        Build directed graph of model family tree with multiple relationship types.
         
         Args:
             root_model_id: Root model to start from
-            max_depth: Maximum depth to traverse
+            max_depth: Maximum depth to traverse. If None, traverses entire tree without limit.
+            include_edge_attributes: Whether to calculate edge attributes (change in likes, downloads, etc.)
+            filter_edge_types: List of edge types to include (e.g., ['finetune', 'quantized']). 
+                              If None, includes all types.
             
         Returns:
-            NetworkX DiGraph representing family tree
+            NetworkX DiGraph representing family tree with edge types and attributes
         """
         graph = nx.DiGraph()
         visited = set()
         
-        def add_family(current_id: str, depth: int):
-            if depth <= 0 or current_id in visited:
+        children_index: Dict[str, List[Tuple[str, str]]] = {}
+        for idx, row in self.df.iterrows():
+            model_id = str(row.get('model_id', idx))
+            all_parents = _get_all_parents(row)
+            
+            for rel_type, parent_list in all_parents.items():
+                for parent_id in parent_list:
+                    if parent_id not in children_index:
+                        children_index[parent_id] = []
+                    children_index[parent_id].append((model_id, rel_type))
+        
+        def add_family(current_id: str, depth: Optional[int]):
+            if current_id in visited:
+                return
+            if depth is not None and depth <= 0:
                 return
             visited.add(current_id)
             
@@ -233,27 +306,97 @@ class ModelNetworkBuilder:
             
             row = self.df.loc[current_id]
             
-            # Add node
             graph.add_node(str(current_id))
             graph.nodes[str(current_id)]['title'] = self._format_title(current_id)
             graph.nodes[str(current_id)]['freq'] = int(row.get('downloads', 0))
+            graph.nodes[str(current_id)]['likes'] = int(row.get('likes', 0))
+            graph.nodes[str(current_id)]['downloads'] = int(row.get('downloads', 0))
+            graph.nodes[str(current_id)]['library'] = str(row.get('library_name', '')) if pd.notna(row.get('library_name')) else ''
+            graph.nodes[str(current_id)]['pipeline'] = str(row.get('pipeline_tag', '')) if pd.notna(row.get('pipeline_tag')) else ''
             
-            # Add edge to parent
-            parent_id = row.get('parent_model')
-            if parent_id and pd.notna(parent_id) and str(parent_id) != 'nan':
-                parent_id_str = str(parent_id)
-                graph.add_edge(parent_id_str, str(current_id))
-                add_family(parent_id_str, depth - 1)
+            createdAt = row.get('createdAt')
+            if pd.notna(createdAt):
+                graph.nodes[str(current_id)]['createdAt'] = str(createdAt)
             
-            # Add edges to children
-            children = self.df[self.df.get('parent_model', '') == current_id]
-            for child_id, child_row in children.iterrows():
+            all_parents = _get_all_parents(row)
+            for rel_type, parent_list in all_parents.items():
+                if filter_edge_types and rel_type not in filter_edge_types:
+                    continue
+                
+                for parent_id in parent_list:
+                    if parent_id in self.df.index:
+                        graph.add_edge(parent_id, str(current_id))
+                        graph[parent_id][str(current_id)]['edge_types'] = [rel_type]
+                        graph[parent_id][str(current_id)]['edge_type'] = rel_type
+                        
+                        next_depth = depth - 1 if depth is not None else None
+                        add_family(parent_id, next_depth)
+            
+            children = children_index.get(current_id, [])
+            for child_id, rel_type in children:
+                if filter_edge_types and rel_type not in filter_edge_types:
+                    continue
+                
                 if str(child_id) not in visited:
-                    graph.add_edge(str(current_id), str(child_id))
-                    add_family(str(child_id), depth - 1)
+                    if not graph.has_edge(str(current_id), child_id):
+                        graph.add_edge(str(current_id), child_id)
+                        graph[str(current_id)][child_id]['edge_types'] = [rel_type]
+                        graph[str(current_id)][child_id]['edge_type'] = rel_type
+                    else:
+                        if rel_type not in graph[str(current_id)][child_id].get('edge_types', []):
+                            graph[str(current_id)][child_id]['edge_types'].append(rel_type)
+                    
+                    next_depth = depth - 1 if depth is not None else None
+                    add_family(child_id, next_depth)
         
         add_family(root_model_id, max_depth)
+        
+        if include_edge_attributes:
+            self._add_edge_attributes(graph)
+        
         return graph
+    
+    def _add_edge_attributes(self, graph: nx.DiGraph):
+        """
+        Add edge attributes like change in likes, downloads, time difference.
+        Similar to the notebook's edge attribute calculation.
+        """
+        for edge in graph.edges():
+            parent_model = edge[0]
+            model_id = edge[1]
+            
+            if parent_model not in graph.nodes() or model_id not in graph.nodes():
+                continue
+            
+            parent_likes = graph.nodes[parent_model].get('likes', 0)
+            model_likes = graph.nodes[model_id].get('likes', 0)
+            parent_downloads = graph.nodes[parent_model].get('downloads', 0)
+            model_downloads = graph.nodes[model_id].get('downloads', 0)
+            
+            graph.edges[edge]['change_in_likes'] = model_likes - parent_likes
+            if parent_likes != 0:
+                graph.edges[edge]['percentage_change_in_likes'] = (model_likes - parent_likes) / parent_likes
+            else:
+                graph.edges[edge]['percentage_change_in_likes'] = np.nan
+            
+            graph.edges[edge]['change_in_downloads'] = model_downloads - parent_downloads
+            if parent_downloads != 0:
+                graph.edges[edge]['percentage_change_in_downloads'] = (model_downloads - parent_downloads) / parent_downloads
+            else:
+                graph.edges[edge]['percentage_change_in_downloads'] = np.nan
+            
+            parent_created = graph.nodes[parent_model].get('createdAt')
+            model_created = graph.nodes[model_id].get('createdAt')
+            
+            if parent_created and model_created:
+                try:
+                    parent_dt = datetime.strptime(str(parent_created), '%Y-%m-%dT%H:%M:%S.%fZ')
+                    model_dt = datetime.strptime(str(model_created), '%Y-%m-%dT%H:%M:%S.%fZ')
+                    graph.edges[edge]['change_in_createdAt_days'] = (model_dt - parent_dt).days
+                except (ValueError, TypeError):
+                    graph.edges[edge]['change_in_createdAt_days'] = np.nan
+            else:
+                graph.edges[edge]['change_in_createdAt_days'] = np.nan
     
     def export_graphml(self, graph: nx.Graph, filename: str):
         """Export graph to GraphML format (like Open Syllabus)."""

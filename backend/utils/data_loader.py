@@ -50,18 +50,16 @@ class ModelDataLoader:
         else:
             df = df.copy()
         
-        # Fill NaN values
         text_fields = ['tags', 'pipeline_tag', 'library_name', 'modelCard']
         for field in text_fields:
             if field in df.columns:
                 df[field] = df[field].fillna('')
         
-        # Combine text fields for embedding
         df['combined_text'] = (
             df.get('tags', '').astype(str) + ' ' +
             df.get('pipeline_tag', '').astype(str) + ' ' +
             df.get('library_name', '').astype(str) + ' ' +
-            df['modelCard'].astype(str).str[:500]  # Limit modelCard to first 500 chars
+            df['modelCard'].astype(str).str[:500]
         )
         
         return df
@@ -94,7 +92,6 @@ class ModelDataLoader:
         else:
             df = df.copy()
         
-        # Optimized filtering with vectorized operations
         if min_downloads is not None:
             downloads_col = df.get('downloads', pd.Series([0] * len(df), index=df.index))
             df = df[downloads_col >= min_downloads]

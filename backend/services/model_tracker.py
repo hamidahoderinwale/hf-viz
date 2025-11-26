@@ -5,11 +5,16 @@ Tracks the number of models over time and provides historical data.
 import os
 import json
 import sqlite3
+import logging
+import re
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from huggingface_hub import HfApi
 import pandas as pd
 from pathlib import Path
+import httpx
+
+logger = logging.getLogger(__name__)
 
 
 class ModelCountTracker:
@@ -34,7 +39,6 @@ class ModelCountTracker:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        # Create table for model counts
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS model_counts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,7 +51,6 @@ class ModelCountTracker:
             )
         """)
         
-        # Create index for faster queries
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_timestamp 
             ON model_counts(timestamp)
@@ -56,27 +59,90 @@ class ModelCountTracker:
         conn.commit()
         conn.close()
     
-    def get_current_model_count(self) -> Dict:
+    def get_count_from_models_page(self) -> Optional[Dict]:
         """
-        Fetch current model count from Hugging Face Hub API.
-        Uses efficient pagination to get accurate count.
+        Get model count by scraping the Hugging Face models page.
+        Extracts count from the div with class "font-normal text-gray-400" on https://huggingface.co/models
+        or from window.__hf_deferred["numTotalItems"] in the page script.
+        
+        Returns:
+            Dictionary with total_models count, or None if extraction fails
+        """
+        try:
+            url = "https://huggingface.co/models"
+            response = httpx.get(url, timeout=10.0, follow_redirects=True)
+            response.raise_for_status()
+            
+            html_content = response.text
+            
+            deferred_pattern = r'window\.__hf_deferred\["numTotalItems"\]\s*=\s*(\d+);'
+            deferred_matches = re.findall(deferred_pattern, html_content)
+            
+            if deferred_matches:
+                total_models = int(deferred_matches[0])
+                logger.info(f"Extracted model count from window.__hf_deferred: {total_models}")
+                
+                return {
+                    "total_models": total_models,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "source": "hf_models_page",
+                    "models_by_library": {},
+                    "models_by_pipeline": {},
+                    "models_by_author": {}
+                }
+            
+            pattern = r'<div[^>]*class="[^"]*font-normal[^"]*text-gray-400[^"]*"[^>]*>([\d,]+)</div>'
+            matches = re.findall(pattern, html_content)
+            
+            if matches:
+                count_str = matches[0].replace(',', '')
+                total_models = int(count_str)
+                
+                logger.info(f"Extracted model count from div: {total_models}")
+                
+                return {
+                    "total_models": total_models,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "source": "hf_models_page",
+                    "models_by_library": {},
+                    "models_by_pipeline": {},
+                    "models_by_author": {}
+                }
+            
+            logger.warning("Could not find model count in HF models page HTML")
+            return None
+                
+        except httpx.HTTPError as e:
+            logger.error(f"HTTP error fetching HF models page: {e}", exc_info=True)
+            return None
+        except Exception as e:
+            logger.error(f"Error extracting count from HF models page: {e}", exc_info=True)
+            return None
+    
+    def get_current_model_count(self, use_models_page: bool = True) -> Dict:
+        """
+        Fetch current model count from Hugging Face Hub.
+        Uses multiple strategies: models page scraping (fastest), then API enumeration.
+        
+        Args:
+            use_models_page: Try to get count from HF models page first (default: True)
         
         Returns:
             Dictionary with total count and breakdowns
         """
+        if use_models_page:
+            page_count = self.get_count_from_models_page()
+            if page_count:
+                return page_count
+        
         try:
-            # Use pagination to efficiently count models
-            # The API returns paginated results, so we iterate through pages
-            # For large counts, we sample and extrapolate for speed
-            
             total_count = 0
             library_counts = {}
             pipeline_counts = {}
-            page_size = 1000  # Process in batches
-            max_pages = 100  # Limit to prevent timeout (can adjust)
-            sample_size = 10000  # Sample size for breakdowns
+            page_size = 1000
+            max_pages = 100
+            sample_size = 10000
             
-            # Count total models efficiently
             models_iter = self.api.list_models(full=False)
             sampled_models = []
             
@@ -87,25 +153,18 @@ class ModelCountTracker:
                 if i < sample_size:
                     sampled_models.append(model)
                 
-                # Safety limit to prevent infinite loops
                 if i >= max_pages * page_size:
-                    # If we hit the limit, estimate total from sample
-                    # This is a rough estimate - for exact count, increase max_pages
                     break
             
-            # Calculate breakdowns from sample (extrapolate if needed)
             for model in sampled_models:
-                # Count by library
                 if hasattr(model, 'library_name') and model.library_name:
                     lib = model.library_name
                     library_counts[lib] = library_counts.get(lib, 0) + 1
                 
-                # Count by pipeline
                 if hasattr(model, 'pipeline_tag') and model.pipeline_tag:
                     pipeline = model.pipeline_tag
                     pipeline_counts[pipeline] = pipeline_counts.get(pipeline, 0) + 1
             
-            # If we sampled, scale up the breakdowns proportionally
             if len(sampled_models) < total_count and len(sampled_models) > 0:
                 scale_factor = total_count / len(sampled_models)
                 library_counts = {k: int(v * scale_factor) for k, v in library_counts.items()}
@@ -118,7 +177,7 @@ class ModelCountTracker:
                 "timestamp": datetime.utcnow().isoformat()
             }
         except Exception as e:
-            print(f"Error fetching model count: {e}")
+            logger.error(f"Error fetching model count: {e}", exc_info=True)
             return {
                 "total_models": 0,
                 "models_by_library": {},
@@ -162,7 +221,7 @@ class ModelCountTracker:
             conn.close()
             return True
         except Exception as e:
-            print(f"Error recording count: {e}")
+            logger.error(f"Error recording count: {e}", exc_info=True)
             return False
     
     def get_historical_counts(
@@ -211,7 +270,7 @@ class ModelCountTracker:
             conn.close()
             return results
         except Exception as e:
-            print(f"Error fetching historical counts: {e}")
+            logger.error(f"Error fetching historical counts: {e}", exc_info=True)
             return []
     
     def get_latest_count(self) -> Optional[Dict]:
@@ -239,7 +298,7 @@ class ModelCountTracker:
                 }
             return None
         except Exception as e:
-            print(f"Error fetching latest count: {e}")
+            logger.error(f"Error fetching latest count: {e}", exc_info=True)
             return None
     
     def get_growth_stats(self, days: int = 7) -> Dict:

@@ -1,0 +1,122 @@
+.cluster-filter {
+  margin-bottom: 1.5rem;
+}
+
+.cluster-filter-header {
+  margin-bottom: 0.75rem;
+}
+
+.cluster-filter-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.cluster-filter-search {
+  margin-bottom: 0.75rem;
+}
+
+.cluster-search-input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  font-size: 0.9rem;
+  background: var(--bg-primary, #ffffff);
+  color: var(--text-primary, #1a1a1a);
+}
+
+.cluster-search-input:focus {
+  outline: none;
+  border-color: var(--accent-color, #4a90e2);
+}
+
+.cluster-filter-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.cluster-action-btn {
+  flex: 1;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  background: var(--bg-primary, #ffffff);
+  color: var(--text-primary, #1a1a1a);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cluster-action-btn:hover:not(:disabled) {
+  background: var(--bg-secondary, #f5f5f5);
+  border-color: var(--accent-color, #4a90e2);
+}
+
+.cluster-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cluster-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  padding: 0.5rem;
+  background: var(--bg-primary, #ffffff);
+}
+
+.cluster-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 0.15s;
+  font-size: 0.85rem;
+}
+
+.cluster-item:hover {
+  background: var(--bg-secondary, #f5f5f5);
+}
+
+.cluster-item.selected {
+  background: var(--bg-secondary, #f5f5f5);
+}
+
+.cluster-checkbox {
+  margin: 0;
+  cursor: pointer;
+}
+
+.cluster-color-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-color, #e0e0e0);
+}
+
+.cluster-label {
+  flex: 1;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.cluster-count {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #666);
+  margin-left: auto;
+}
+
+.cluster-filter-loading,
+.cluster-filter-empty {
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-secondary, #666);
+  font-size: 0.9rem;
+}
+
