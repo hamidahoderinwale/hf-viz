@@ -1,28 +1,81 @@
-/**
- * Main React app component using Visx for visualization.
- */
 import React, { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
-import EnhancedScatterPlot from './components/EnhancedScatterPlot';
-import NetworkGraph from './components/NetworkGraph';
-import Histogram from './components/Histogram';
-import UVProjectionSquare from './components/UVProjectionSquare';
-import ModelModal from './components/ModelModal';
-import PaperPlots from './components/PaperPlots';
-import LiveModelCount from './components/LiveModelCount';
-import ColorLegend from './components/ColorLegend';
-import ModelTooltip from './components/ModelTooltip';
-import ErrorBoundary from './components/ErrorBoundary';
+// Visualizations
+import EnhancedScatterPlot from './components/visualizations/EnhancedScatterPlot';
+import NetworkGraph from './components/visualizations/NetworkGraph';
+import UVProjectionSquare from './components/visualizations/UVProjectionSquare';
+import DistributionView from './components/visualizations/DistributionView';
+import StackedView from './components/visualizations/StackedView';
+import HeatmapView from './components/visualizations/HeatmapView';
+// Controls
+import RandomModelButton from './components/controls/RandomModelButton';
+import ZoomSlider from './components/controls/ZoomSlider';
+import ThemeToggle from './components/controls/ThemeToggle';
+import RenderingStyleSelector from './components/controls/RenderingStyleSelector';
+import VisualizationModeButtons from './components/controls/VisualizationModeButtons';
+import ClusterFilter, { Cluster } from './components/controls/ClusterFilter';
+import NodeDensitySlider from './components/controls/NodeDensitySlider';
+// Modals
+import ModelModal from './components/modals/ModelModal';
+// UI Components
+import LiveModelCount from './components/ui/LiveModelCount';
+import ModelTooltip from './components/ui/ModelTooltip';
+import ErrorBoundary from './components/ui/ErrorBoundary';
+// Types & Utils
 import { ModelPoint, Stats, FamilyTree, SearchResult, SimilarModel } from './types';
-import cache, { IndexedDBCache } from './utils/indexedDB';
+import cache, { IndexedDBCache } from './utils/data/indexedDB';
 import { debounce } from './utils/debounce';
-import requestManager from './utils/requestManager';
+import requestManager from './utils/api/requestManager';
+import { useFilterStore, ViewMode, ColorByOption, SizeByOption } from './stores/filterStore';
+import { API_BASE } from './config/api';
 import './App.css';
 
-const ScatterPlot3D = lazy(() => import('./components/ScatterPlot3D'));
+const logger = {
+  error: (message: string, error?: unknown) => {
+    if (process.env.NODE_ENV === 'development') {
+      console.error(message, error);
+    }
+  },
+};
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const ScatterPlot3D = lazy(() => import('./components/visualizations/ScatterPlot3D'));
 
 function App() {
+  // Filter store state
+  const {
+    viewMode,
+    colorBy,
+    sizeBy,
+    colorScheme,
+    showLabels,
+    zoomLevel,
+    nodeDensity,
+    renderingStyle,
+    theme,
+    selectedClusters,
+    searchQuery,
+    minDownloads,
+    minLikes,
+    setViewMode,
+    setColorBy,
+    setSizeBy,
+    setColorScheme,
+    setShowLabels,
+    setZoomLevel,
+    setNodeDensity,
+    setRenderingStyle,
+    setSelectedClusters,
+    setSearchQuery,
+    setMinDownloads,
+    setMinLikes,
+    getActiveFilterCount,
+    resetFilters: resetFilterStore,
+  } = useFilterStore();
+
+  // Initialize theme on mount
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
   const [data, setData] = useState<ModelPoint[]>([]);
   const [filteredCount, setFilteredCount] = useState<number | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -31,8 +84,6 @@ function App() {
   const [selectedModel, setSelectedModel] = useState<ModelPoint | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedModels, setSelectedModels] = useState<ModelPoint[]>([]);
-  const [viewMode, setViewMode] = useState<'scatter' | 'network' | 'histogram' | '3d' | 'paper-plots'>('3d');
-  const [histogramAttribute, setHistogramAttribute] = useState<'downloads' | 'likes' | 'trending_score'>('downloads');
   const [baseModelsOnly, setBaseModelsOnly] = useState(false);
   const [semanticSimilarityMode, setSemanticSimilarityMode] = useState(false);
   const [semanticQueryModel, setSemanticQueryModel] = useState<string | null>(null);
@@ -48,13 +99,6 @@ function App() {
   const [comparisonModels, setComparisonModels] = useState<ModelPoint[]>([]);
   const [similarModels, setSimilarModels] = useState<SimilarModel[]>([]);
   const [showSimilar, setShowSimilar] = useState(false);
-
-  const [minDownloads, setMinDownloads] = useState(0);
-  const [minLikes, setMinLikes] = useState(0);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [colorBy, setColorBy] = useState('library_name');
-  const [sizeBy, setSizeBy] = useState('downloads');
-  const [colorScheme, setColorScheme] = useState<'viridis' | 'plasma' | 'inferno' | 'magma' | 'coolwarm'>('viridis');
   const [showLegend, setShowLegend] = useState(true);
   const [hoveredModel, setHoveredModel] = useState<ModelPoint | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
@@ -64,16 +108,22 @@ function App() {
   const [showStructuralGroups, setShowStructuralGroups] = useState(false);
   const [overviewMode, setOverviewMode] = useState(false);
   const [networkEdgeType, setNetworkEdgeType] = useState<'library' | 'pipeline' | 'combined'>('combined');
+  const [maxHierarchyDepth, setMaxHierarchyDepth] = useState<number | null>(null);
+  const [showDistanceHeatmap, setShowDistanceHeatmap] = useState(false);
+  const [highlightedPath, setHighlightedPath] = useState<string[]>([]);
+  const [useGraphEmbeddings, setUseGraphEmbeddings] = useState(false);
+  const [embeddingType, setEmbeddingType] = useState<string>('text-only');
+  const [clusters, setClusters] = useState<Cluster[]>([]);
+  const [clustersLoading, setClustersLoading] = useState(false);
   
-  const activeFilterCount = (minDownloads > 0 ? 1 : 0) + 
-                           (minLikes > 0 ? 1 : 0) + 
-                           (searchQuery.length > 0 ? 1 : 0);
+  const activeFilterCount = getActiveFilterCount();
   
   const resetFilters = useCallback(() => {
+    resetFilterStore();
     setMinDownloads(0);
     setMinLikes(0);
     setSearchQuery('');
-  }, []);
+  }, [resetFilterStore, setMinDownloads, setMinLikes, setSearchQuery]);
 
   const [width, setWidth] = useState(window.innerWidth * 0.7);
   const [height, setHeight] = useState(window.innerHeight * 0.7);
@@ -106,11 +156,14 @@ function App() {
       });
 
       const cachedModels = await cache.getCachedModels(cacheKey);
-      if (cachedModels) {
+      if (cachedModels && cachedModels.length > 0) {
         setData(cachedModels);
-        // Set filteredCount to models length when using cache (best approximation)
         setFilteredCount(cachedModels.length);
         setLoading(false);
+        // Fetch in background to update cache if stale
+        setTimeout(() => {
+          fetchData();
+        }, 100);
         return;
       }
       let models: ModelPoint[];
@@ -129,7 +182,6 @@ function App() {
         if (!response.ok) throw new Error('Failed to fetch similar models');
         const result = await response.json();
         models = result.models || [];
-        // Semantic similarity doesn't return filtered_count, use models length
         count = models.length;
       } else {
         const params = new URLSearchParams({
@@ -139,14 +191,12 @@ function App() {
           size_by: sizeBy,
           projection_method: projectionMethod,
           base_models_only: baseModelsOnly.toString(),
+          use_graph_embeddings: useGraphEmbeddings.toString(),
         });
         if (searchQuery) {
           params.append('search_query', searchQuery);
         }
         
-        // Request a large number of models for better representation
-        // The backend will use stratified sampling if needed, and frontend will further optimize
-        // Set to 500K to get good coverage while allowing backend to optimize
         params.append('max_points', '500000');
 
         const url = `${API_BASE}/api/models?${params}`;
@@ -154,13 +204,14 @@ function App() {
         if (!response.ok) throw new Error('Failed to fetch models');
         const result = await response.json();
         
-        // Handle both old format (array) and new format (object with models, filtered_count, returned_count)
         if (Array.isArray(result)) {
           models = result;
           count = models.length;
+          setEmbeddingType('text-only');
         } else {
           models = result.models || [];
           count = result.filtered_count ?? models.length;
+          setEmbeddingType(result.embedding_type || 'text-only');
         }
       }
       
@@ -170,13 +221,19 @@ function App() {
       setFilteredCount(count);
     } catch (err: any) {
       if (err.name !== 'AbortError') {
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        // Check if it's a connection error (backend not ready)
+        if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
+          setError('Backend is starting up. Please wait... The first load may take a few minutes.');
+        } else {
+          setError(errorMessage);
+        }
       }
     } finally {
       setLoading(false);
       fetchDataAbortRef.current = null;
     }
-  }, [minDownloads, minLikes, searchQuery, colorBy, sizeBy, projectionMethod, baseModelsOnly, semanticSimilarityMode, semanticQueryModel]);
+  }, [minDownloads, minLikes, searchQuery, colorBy, sizeBy, projectionMethod, baseModelsOnly, semanticSimilarityMode, semanticQueryModel, useGraphEmbeddings, selectedClusters]);
 
   const debouncedFetchData = useMemo(
     () => debounce(fetchData, 300),
@@ -187,7 +244,6 @@ function App() {
     if (searchQuery) {
       debouncedFetchData();
     } else {
-      // Immediate fetch if search is cleared
       fetchData();
     }
     return () => {
@@ -200,7 +256,7 @@ function App() {
     return () => {
       debouncedFetchData.cancel();
     };
-  }, [minDownloads, minLikes, colorBy, sizeBy, baseModelsOnly, projectionMethod, semanticSimilarityMode, semanticQueryModel, debouncedFetchData]);
+  }, [minDownloads, minLikes, colorBy, sizeBy, baseModelsOnly, projectionMethod, semanticSimilarityMode, semanticQueryModel, useGraphEmbeddings, debouncedFetchData]);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -218,11 +274,33 @@ function App() {
         await cache.cacheStats(cacheKey, statsData);
         setStats(statsData);
       } catch (err) {
-        console.error('Error fetching stats:', err);
+        if (err instanceof Error) {
+          logger.error('Error fetching stats:', err);
+        }
       }
     };
 
     fetchStats();
+  }, []);
+
+  // Fetch clusters
+  useEffect(() => {
+    const fetchClusters = async () => {
+      setClustersLoading(true);
+      try {
+        const response = await fetch(`${API_BASE}/api/clusters`);
+        if (!response.ok) throw new Error('Failed to fetch clusters');
+        const data = await response.json();
+        setClusters(data.clusters || []);
+      } catch (err) {
+        logger.error('Error fetching clusters:', err);
+        setClusters([]);
+      } finally {
+        setClustersLoading(false);
+      }
+    };
+
+    fetchClusters();
   }, []);
 
   // Search models for family tree lookup
@@ -239,7 +317,7 @@ function App() {
       setSearchResults(data.results || []);
       setShowSearchResults(true);
     } catch (err) {
-      console.error('Search error:', err);
+      logger.error('Search error:', err);
       setSearchResults([]);
     }
   }, []);
@@ -262,7 +340,7 @@ function App() {
       setShowSearchResults(false);
       setSearchInput('');
     } catch (err) {
-      console.error('Family tree error:', err);
+      logger.error('Family tree error:', err);
       setFamilyTree([]);
       setFamilyTreeModelId(null);
     }
@@ -271,6 +349,21 @@ function App() {
   const clearFamilyTree = useCallback(() => {
     setFamilyTree([]);
     setFamilyTreeModelId(null);
+  }, []);
+
+  const loadFamilyPath = useCallback(async (modelId: string, targetId?: string) => {
+    try {
+      const url = targetId
+        ? `${API_BASE}/api/family/path/${encodeURIComponent(modelId)}?target_id=${encodeURIComponent(targetId)}`
+        : `${API_BASE}/api/family/path/${encodeURIComponent(modelId)}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Failed to load path');
+      const data = await response.json();
+      setHighlightedPath(data.path || []);
+    } catch (err) {
+      logger.error('Path loading error:', err);
+      setHighlightedPath([]);
+    }
   }, []);
 
   const loadSimilarModels = useCallback(async (modelId: string) => {
@@ -298,11 +391,9 @@ function App() {
       setShowSimilar(true);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load similar models';
-      console.error('Similar models error:', errorMessage, err);
-      // Only show error if it's not a silent failure (e.g., user cancelled)
+      logger.error('Similar models error:', err);
       if (errorMessage !== 'Failed to load similar models' || !(err instanceof TypeError && err.message.includes('fetch'))) {
         setError(`Similar models: ${errorMessage}`);
-        // Clear error after 5 seconds
         setTimeout(() => setError(null), 5000);
       }
       setSimilarModels([]);
@@ -351,7 +442,7 @@ function App() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('Export error:', err);
+      logger.error('Export error:', err);
       alert('Failed to export models');
     }
   }, []);
@@ -409,19 +500,34 @@ function App() {
 
       <div className="main-content">
         <aside className="sidebar">
-          {/* Live Model Count - Prominent Display */}
-          <LiveModelCount compact={false} />
-          
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', marginTop: '1rem' }}>
-            <h2 style={{ margin: 0 }}>Filters</h2>
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            marginBottom: '1.5rem',
+            paddingBottom: '1rem',
+            borderBottom: '2px solid #e8e8e8'
+          }}>
+            <h2 style={{ 
+              margin: 0,
+              fontSize: '1.5rem',
+              fontWeight: '700',
+              background: 'linear-gradient(135deg, #5e35b1 0%, #7b1fa2 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text'
+            }}>
+              Filters & Controls
+            </h2>
             {activeFilterCount > 0 && (
               <div style={{ 
                 fontSize: '0.75rem', 
-                background: '#4a4a4a', 
+                background: 'linear-gradient(135deg, #5e35b1 0%, #7b1fa2 100%)',
                 color: 'white', 
-                padding: '0.25rem 0.5rem', 
-                borderRadius: '12px',
-                fontWeight: '500'
+                padding: '0.4rem 0.75rem', 
+                borderRadius: '16px',
+                fontWeight: '600',
+                boxShadow: '0 2px 6px rgba(94, 53, 177, 0.3)'
               }}>
                 {activeFilterCount} active
               </div>
@@ -431,21 +537,41 @@ function App() {
           {/* Filter Results Count */}
           {!loading && data.length > 0 && (
             <div className="sidebar-section" style={{ 
-              background: '#e8f5e9', 
-              borderColor: '#c8e6c9',
-              fontSize: '0.9rem'
+              background: 'linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%)',
+              border: '2px solid #ce93d8',
+              fontSize: '0.9rem',
+              marginBottom: '1.5rem'
             }}>
-              <strong>{data.length.toLocaleString()}</strong> {data.length === 1 ? 'model' : 'models'} shown
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <div>
+                  <strong style={{ fontSize: '1.1rem', color: '#6a1b9a' }}>
+                    {data.length.toLocaleString()}
+                  </strong>
+                  <span style={{ marginLeft: '0.4rem', color: '#4a148c' }}>
+                    {data.length === 1 ? 'model' : 'models'}
+                  </span>
+                </div>
+                {embeddingType === 'graph-aware' && (
+                  <span style={{ 
+                    fontSize: '0.7rem', 
+                    background: '#7b1fa2',
+                    color: 'white', 
+                    padding: '0.3rem 0.6rem', 
+                    borderRadius: '12px',
+                    fontWeight: '600'
+                  }}>
+                    🌐 Graph
+                  </span>
+                )}
+              </div>
               {filteredCount !== null && filteredCount !== data.length && (
-                <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.25rem' }}>
-                  of {filteredCount.toLocaleString()} matching filters
+                <div style={{ fontSize: '0.8rem', color: '#6a1b9a', marginTop: '0.25rem' }}>
+                  of {filteredCount.toLocaleString()} matching
                 </div>
               )}
-              {stats && filteredCount !== null && (
-                <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.25rem' }}>
-                  {filteredCount < stats.total_models && (
-                    <>out of {stats.total_models.toLocaleString()} total in dataset</>
-                  )}
+              {stats && filteredCount !== null && filteredCount < stats.total_models && (
+                <div style={{ fontSize: '0.75rem', color: '#8e24aa', marginTop: '0.25rem' }}>
+                  from {stats.total_models.toLocaleString()} total
                 </div>
               )}
             </div>
@@ -453,9 +579,15 @@ function App() {
 
           {/* Search Section */}
           <div className="sidebar-section">
-            <label style={{ fontWeight: '600', marginBottom: '0.5rem', display: 'block' }}>
-              Search Models
-            </label>
+            <h3 style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem',
+              color: '#5e35b1',
+              marginBottom: '0.75rem'
+            }}>
+              🔍 Search Models
+            </h3>
             <input
               type="text"
               value={searchQuery}
@@ -463,14 +595,21 @@ function App() {
               placeholder="Search by model ID, tags, or keywords..."
               style={{ width: '100%' }}
             />
-            <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
-              Searches model names, tags, and metadata
+            <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.5rem', lineHeight: '1.4' }}>
+              Search by model name, tags, library, or metadata
             </div>
           </div>
 
           {/* Popularity Filters */}
           <div className="sidebar-section">
-            <h3>Popularity Filters</h3>
+            <h3 style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem',
+              color: '#5e35b1'
+            }}>
+              📊 Popularity Filters
+            </h3>
             
             <label style={{ marginBottom: '1rem', display: 'block' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
@@ -519,37 +658,149 @@ function App() {
             </label>
           </div>
 
+          {/* License Filter */}
+          {stats && stats.licenses && typeof stats.licenses === 'object' && Object.keys(stats.licenses).length > 0 && (
+            <div className="sidebar-section">
+              <h3>License Filter</h3>
+              <div style={{ maxHeight: '200px', overflowY: 'auto', marginTop: '0.5rem' }}>
+                {Object.entries(stats.licenses as Record<string, number>)
+                  .sort((a, b) => b[1] - a[1])  // Sort by count descending
+                  .slice(0, 20)  // Show top 20 licenses
+                  .map(([license, count]) => (
+                    <label 
+                      key={license}
+                      style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '0.5rem', 
+                        marginBottom: '0.5rem',
+                        cursor: 'pointer',
+                        fontSize: '0.9rem'
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={searchQuery.toLowerCase().includes(license.toLowerCase())}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            // Add license to search (simple implementation)
+                            setSearchQuery(searchQuery ? `${searchQuery} ${license}` : license);
+                          } else {
+                            // Remove license from search
+                            setSearchQuery(searchQuery.replace(license, '').trim() || '');
+                          }
+                        }}
+                      />
+                      <span style={{ flex: 1 }}>{license || 'Unknown'}</span>
+                      <span style={{ fontSize: '0.75rem', color: '#666' }}>({Number(count).toLocaleString()})</span>
+                    </label>
+                  ))}
+              </div>
+              {Object.keys(stats.licenses).length > 20 && (
+                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.5rem' }}>
+                  Showing top 20 licenses
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Discovery */}
+          <div className="sidebar-section">
+            <h3 style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem',
+              color: '#5e35b1'
+            }}>
+              🎲 Discovery
+            </h3>
+            <RandomModelButton
+              data={data}
+              onSelect={(model: ModelPoint) => {
+                setSelectedModel(model);
+                setIsModalOpen(true);
+              }}
+              disabled={loading || data.length === 0}
+            />
+          </div>
+
           {/* Visualization Options */}
           <div className="sidebar-section">
-            <h3>Visualization Options</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ 
+                margin: 0,
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.5rem',
+                color: '#5e35b1'
+              }}>
+                🎨 Visualization
+              </h3>
+              <ThemeToggle />
+            </div>
             
             <label style={{ marginBottom: '1rem', display: 'block' }}>
               <span style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem' }}>View Mode</span>
               <select 
                 value={viewMode} 
-                onChange={(e) => setViewMode(e.target.value as any)}
+                onChange={(e) => setViewMode(e.target.value as ViewMode)}
                 style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #d0d0d0' }}
               >
                 <option value="3d">3D Latent Space</option>
                 <option value="scatter">2D Latent Space</option>
                 <option value="network">Network Graph</option>
-                <option value="histogram">Distribution Histogram</option>
-                <option value="paper-plots">Paper Visualizations</option>
+                <option value="distribution">Distribution</option>
+                <option value="stacked">Stacked</option>
+                <option value="heatmap">Heatmap</option>
               </select>
               <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
                 {viewMode === '3d' && 'Interactive 3D exploration of model relationships'}
                 {viewMode === 'scatter' && '2D projection showing model similarity'}
                 {viewMode === 'network' && 'Network graph of model connections'}
-                {viewMode === 'histogram' && 'Distribution analysis of model attributes'}
-                {viewMode === 'paper-plots' && 'Interactive visualizations from the research paper'}
+                {viewMode === 'distribution' && 'Statistical distributions of model properties'}
+                {viewMode === 'stacked' && 'Hierarchical view of model families'}
+                {viewMode === 'heatmap' && 'Density heatmap in latent space'}
               </div>
             </label>
+
+            {/* Rendering Style Selector for 3D View */}
+            {viewMode === '3d' && (
+              <div style={{ marginBottom: '1rem' }}>
+                <RenderingStyleSelector />
+              </div>
+            )}
+
+            {/* Zoom and Label Controls for 3D View */}
+            {viewMode === '3d' && (
+              <>
+                <ZoomSlider
+                  value={zoomLevel}
+                  onChange={setZoomLevel}
+                  min={0.1}
+                  max={5}
+                  step={0.1}
+                  disabled={loading}
+                />
+                <NodeDensitySlider disabled={loading} />
+                <div className="label-toggle">
+                  <span className="label-toggle-label">Show Labels</span>
+                  <label className="label-toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={showLabels}
+                      onChange={(e) => setShowLabels(e.target.checked)}
+                    />
+                    <span className="label-toggle-slider"></span>
+                  </label>
+                </div>
+              </>
+            )}
 
             <label style={{ marginBottom: '1rem', display: 'block' }}>
               <span style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem' }}>Color Encoding</span>
               <select 
                 value={colorBy} 
-                onChange={(e) => setColorBy(e.target.value)}
+                onChange={(e) => setColorBy(e.target.value as ColorByOption)}
                 style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #d0d0d0' }}
               >
                 <option value="library_name">Library (e.g., transformers, diffusers)</option>
@@ -601,7 +852,7 @@ function App() {
               <span style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem' }}>Size Encoding</span>
               <select 
                 value={sizeBy} 
-                onChange={(e) => setSizeBy(e.target.value)}
+                onChange={(e) => setSizeBy(e.target.value as SizeByOption)}
                 style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #d0d0d0' }}
               >
                 <option value="downloads">Downloads (larger = more popular)</option>
@@ -633,8 +884,15 @@ function App() {
           </div>
 
           {/* View Modes */}
-          <div className="sidebar-section" style={{ background: '#f0f7ff', borderColor: '#b3d9ff' }}>
-            <h3>View Modes</h3>
+          <div className="sidebar-section" style={{ background: 'linear-gradient(135deg, #f3e5f5 0%, #fce4ec 100%)', border: '2px solid #f48fb1' }}>
+            <h3 style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem',
+              color: '#5e35b1'
+            }}>
+              ⚡ View Modes
+            </h3>
             
             <label style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
               <input
@@ -670,6 +928,44 @@ function App() {
                 </div>
               </div>
             </label>
+
+            <label style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={useGraphEmbeddings}
+                onChange={(e) => setUseGraphEmbeddings(e.target.checked)}
+                style={{ marginRight: '0.5rem', cursor: 'pointer' }}
+              />
+              <div>
+                <span style={{ fontWeight: '500' }}>🌐 Graph-Aware Embeddings</span>
+                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
+                  Use embeddings that respect family tree structure. Models in the same family will be closer together.
+                </div>
+              </div>
+            </label>
+            
+            {embeddingType && (
+              <div style={{ 
+                marginTop: '0.5rem', 
+                padding: '0.75rem', 
+                background: embeddingType === 'graph-aware' ? '#e8f5e9' : '#f5f5f5',
+                border: `1px solid ${embeddingType === 'graph-aware' ? '#4caf50' : '#d0d0d0'}`,
+                borderRadius: '4px',
+                fontSize: '0.75rem',
+                color: '#666'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                  <strong style={{ color: embeddingType === 'graph-aware' ? '#2e7d32' : '#666' }}>
+                    {embeddingType === 'graph-aware' ? '🌐 Graph-Aware' : '📝 Text-Only'} Embeddings
+                  </strong>
+                </div>
+                <div style={{ fontSize: '0.7rem', color: '#888', lineHeight: '1.4' }}>
+                  {embeddingType === 'graph-aware' 
+                    ? 'Models in the same family tree are positioned closer together, revealing hierarchical relationships.'
+                    : 'Standard text-based embeddings showing semantic similarity from model descriptions and tags.'}
+                </div>
+              </div>
+            )}
 
             {semanticSimilarityMode && (
               <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'white', borderRadius: '4px', border: '1px solid #d0d0d0' }}>
@@ -710,8 +1006,15 @@ function App() {
 
           {/* Structural Visualization Options */}
           {viewMode === '3d' && (
-            <div className="sidebar-section" style={{ background: '#f0f8f0', borderColor: '#90ee90' }}>
-              <h3>🔗 Structural Visualization</h3>
+            <div className="sidebar-section" style={{ background: 'linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%)', border: '2px solid #aed581' }}>
+              <h3 style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.5rem',
+                color: '#5e35b1'
+              }}>
+                🔗 Network Structure
+              </h3>
               <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '1rem', lineHeight: '1.4' }}>
                 Explore relationships and structure in the model ecosystem
               </div>
@@ -782,7 +1085,14 @@ function App() {
 
           {/* Quick Filters */}
           <div className="sidebar-section">
-            <h3>Quick Filters</h3>
+            <h3 style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem',
+              color: '#5e35b1'
+            }}>
+              ⚡ Quick Actions
+            </h3>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
               <button
                 onClick={() => {
@@ -827,7 +1137,101 @@ function App() {
           </div>
 
           <div className="sidebar-section">
-            <h3>Family Tree Explorer</h3>
+            <h3 style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem',
+              color: '#5e35b1'
+            }}>
+              🌳 Hierarchy Navigation
+            </h3>
+            <label style={{ marginBottom: '1rem', display: 'block' }}>
+              <span style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem' }}>
+                Max Hierarchy Depth
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="10"
+                value={maxHierarchyDepth ?? 10}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value);
+                  setMaxHierarchyDepth(val === 10 ? null : val);
+                }}
+                style={{ width: '100%', marginTop: '0.5rem' }}
+              />
+              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem', display: 'flex', justifyContent: 'space-between' }}>
+                <span>All levels</span>
+                <span>{maxHierarchyDepth !== null ? `Depth ≤ ${maxHierarchyDepth}` : 'No limit'}</span>
+              </div>
+            </label>
+            <label style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <input
+                type="checkbox"
+                checked={showDistanceHeatmap}
+                onChange={(e) => setShowDistanceHeatmap(e.target.checked)}
+              />
+              <span style={{ fontSize: '0.9rem' }}>Show Distance Heatmap</span>
+            </label>
+            {selectedModel && (
+              <div style={{ marginTop: '0.5rem', padding: '0.5rem', background: '#f5f5f5', borderRadius: '4px', fontSize: '0.85rem' }}>
+                <div style={{ fontWeight: '500', marginBottom: '0.25rem' }}>Selected Model:</div>
+                <div style={{ color: '#666', marginBottom: '0.5rem', wordBreak: 'break-word' }}>{selectedModel.model_id}</div>
+                {selectedModel.family_depth !== null && (
+                  <div style={{ color: '#666', marginBottom: '0.5rem' }}>
+                    Hierarchy Depth: {selectedModel.family_depth}
+                  </div>
+                )}
+                <button
+                  onClick={() => {
+                    if (selectedModel.parent_model) {
+                      loadFamilyPath(selectedModel.model_id, selectedModel.parent_model);
+                    } else {
+                      loadFamilyPath(selectedModel.model_id);
+                    }
+                  }}
+                  style={{
+                    padding: '0.25rem 0.5rem',
+                    fontSize: '0.8rem',
+                    background: '#4a90e2',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '2px',
+                    cursor: 'pointer',
+                    marginRight: '0.5rem',
+                    marginBottom: '0.5rem'
+                  }}
+                >
+                  Show Path to Root
+                </button>
+                <button
+                  onClick={() => setHighlightedPath([])}
+                  style={{
+                    padding: '0.25rem 0.5rem',
+                    fontSize: '0.8rem',
+                    background: '#6a6a6a',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '2px',
+                    cursor: 'pointer',
+                    marginBottom: '0.5rem'
+                  }}
+                >
+                  Clear Path
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="sidebar-section">
+            <h3 style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem',
+              color: '#5e35b1'
+            }}>
+              👥 Family Tree Explorer
+            </h3>
             <div style={{ position: 'relative' }}>
               <input
                 type="text"
@@ -987,25 +1391,6 @@ function App() {
             </div>
           )}
 
-          {viewMode === 'histogram' && (
-            <div style={{ marginBottom: '1.5rem', padding: '1rem', background: '#f9f9f9', borderRadius: '4px', border: '1px solid #e0e0e0' }}>
-              <label style={{ display: 'block' }}>
-                <span style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem' }}>Histogram Attribute</span>
-                <select 
-                  value={histogramAttribute} 
-                  onChange={(e) => setHistogramAttribute(e.target.value as any)}
-                  style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #d0d0d0' }}
-                >
-                  <option value="downloads">Downloads</option>
-                  <option value="likes">Likes</option>
-                  <option value="trending_score">Trending Score</option>
-                </select>
-                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
-                  Distribution of {histogramAttribute.replace('_', ' ')} across all models
-                </div>
-              </label>
-            </div>
-          )}
 
           {selectedModels.length > 0 && (
             <div style={{ marginTop: '1rem', padding: '0.5rem', background: '#e3f2fd', borderRadius: '4px' }}>
@@ -1033,7 +1418,6 @@ function App() {
                   <div 
                     style={{ flex: 1, position: 'relative' }}
                     onMouseMove={(e) => {
-                      // Update tooltip position when mouse moves
                       setTooltipPosition({ x: e.clientX, y: e.clientY });
                     }}
                     onMouseLeave={() => {
@@ -1051,6 +1435,10 @@ function App() {
                         sizeBy={sizeBy}
                         colorScheme={colorScheme}
                         showLegend={showLegend}
+                  showLabels={showLabels}
+                  zoomLevel={zoomLevel}
+                  nodeDensity={nodeDensity}
+                  renderingStyle={renderingStyle}
                         showNetworkEdges={showNetworkEdges}
                         showStructuralGroups={showStructuralGroups}
                         overviewMode={overviewMode}
@@ -1059,7 +1447,8 @@ function App() {
                           setSelectedModel(model);
                           setIsModalOpen(true);
                         }}
-                        selectedModelId={familyTreeModelId}
+                        selectedModelId={selectedModel?.model_id || familyTreeModelId}
+                        selectedModel={selectedModel}
                         onViewChange={setViewCenter}
                         targetViewCenter={viewCenter}
                         onHover={(model, pointer) => {
@@ -1070,6 +1459,8 @@ function App() {
                             setTooltipPosition(null);
                           }
                         }}
+                        highlightedPath={highlightedPath}
+                        showDistanceHeatmap={showDistanceHeatmap && !!selectedModel}
                       />
                     </Suspense>
                     <ModelTooltip 
@@ -1086,7 +1477,7 @@ function App() {
                       borderRadius: '2px',
                       border: '1px solid #d0d0d0',
                       fontSize: '10px',
-                      fontFamily: "'Vend Sans', sans-serif"
+                      fontFamily: "'Instrument Sans', sans-serif"
                     }}>
                       <h4 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '11px', fontWeight: '600' }}>UV Projection</h4>
                       <p style={{ margin: 0, lineHeight: '1.3', color: '#666', fontSize: '9px' }}>
@@ -1099,11 +1490,11 @@ function App() {
                       data={data}
                       familyTree={familyTree.length > 0 ? familyTree : undefined}
                       colorBy={colorBy}
-                      onRegionSelect={(center) => {
+                      onRegionSelect={(center: { x: number; y: number; z: number }) => {
                         setViewCenter(center);
                         // Camera will automatically animate to this position via targetViewCenter prop
                       }}
-                      selectedModelId={familyTreeModelId}
+                        selectedModelId={selectedModel?.model_id || familyTreeModelId}
                       currentViewCenter={viewCenter}
                     />
                     {viewCenter && (
@@ -1114,7 +1505,7 @@ function App() {
                         borderRadius: '2px',
                         border: '1px solid #d0d0d0',
                         fontSize: '10px',
-                        fontFamily: "'Vend Sans', sans-serif"
+                        fontFamily: "'Instrument Sans', sans-serif"
                       }}>
                         <strong style={{ fontSize: '10px' }}>View Center:</strong>
                         <div style={{ fontSize: '9px', marginTop: '0.25rem', color: '#666' }}>
@@ -1154,21 +1545,14 @@ function App() {
                   }}
                 />
               )}
-              {viewMode === 'histogram' && (
-                <Histogram
-                  width={width}
-                  height={height}
-                  data={data}
-                  attribute={histogramAttribute}
-                />
+              {viewMode === 'distribution' && (
+                <DistributionView data={data} width={width} height={height} />
               )}
-
-              {viewMode === 'paper-plots' && (
-                <PaperPlots
-                  data={data}
-                  width={width}
-                  height={height}
-                />
+              {viewMode === 'stacked' && (
+                <StackedView data={data} width={width} height={height} />
+              )}
+              {viewMode === 'heatmap' && (
+                <HeatmapView data={data} width={width} height={height} />
               )}
             </>
           )}
