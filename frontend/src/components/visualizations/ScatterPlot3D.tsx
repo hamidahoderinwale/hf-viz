@@ -6,6 +6,17 @@ import { ModelPoint } from '../../types';
 import { createSpatialIndex } from '../../utils/rendering/spatialIndex';
 import { adaptiveSampleByDistance } from '../../utils/rendering/frustumCulling';
 
+// WebGL context loss recovery
+const handleWebGLContextLoss = (event: Event) => {
+  event.preventDefault();
+  // Context will be restored automatically by the browser
+};
+
+const handleWebGLContextRestored = () => {
+  // Context restored - component will re-render automatically
+  console.info('WebGL context restored');
+};
+
 interface ScatterPlot3DProps {
   data: ModelPoint[];
   colorBy: string;
@@ -143,23 +154,32 @@ function Points({
     frameCount.current++;
     if (frameCount.current % 10 !== 0) return;
     
-    const sampled = adaptiveSampleByDistance(
-      data,
-      camera as THREE.Camera,
-      1.0,
-      50
-    );
-    
-    const MAX_RENDER_POINTS = 100000;
-    if (sampled.length > MAX_RENDER_POINTS) {
-      const step = Math.ceil(sampled.length / MAX_RENDER_POINTS);
-      const finalSampled: ModelPoint[] = [];
-      for (let i = 0; i < sampled.length; i += step) {
-        finalSampled.push(sampled[i]);
+    try {
+      const sampled = adaptiveSampleByDistance(
+        data,
+        camera as THREE.Camera,
+        1.0,
+        50
+      );
+      
+      // Reduced from 100000 to prevent WebGL context loss
+      const MAX_RENDER_POINTS = 50000;
+      if (sampled.length > MAX_RENDER_POINTS) {
+        const step = Math.ceil(sampled.length / MAX_RENDER_POINTS);
+        const finalSampled: ModelPoint[] = [];
+        for (let i = 0; i < sampled.length; i += step) {
+          finalSampled.push(sampled[i]);
+        }
+        setVisiblePoints(finalSampled);
+      } else {
+        setVisiblePoints(sampled);
       }
-      setVisiblePoints(finalSampled);
-    } else {
-      setVisiblePoints(sampled);
+    } catch (error) {
+      // Silently handle WebGL errors to prevent console spam
+      if (error instanceof Error && error.message.includes('WebGL')) {
+        return;
+      }
+      throw error;
     }
   });
 
@@ -205,10 +225,13 @@ function Points({
 
   if (visiblePoints.length === 0) return null;
 
+  // Reduced max instances to prevent WebGL context loss
+  const maxInstances = Math.min(50000, Math.max(visiblePoints.length, 1000));
+  
   return (
     <instancedMesh
       ref={meshRef}
-      args={[undefined, undefined, Math.max(100000, data.length)]}
+      args={[undefined, undefined, maxInstances]}
       frustumCulled={true}
       onPointerMove={handlePointerMove}
       onPointerOut={handlePointerOut}
@@ -222,12 +245,27 @@ function Points({
 
 export default function ScatterPlot3D(props: ScatterPlot3DProps) {
   const { data } = props;
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   useMemo(() => {
     if (data.length > 0) {
       createSpatialIndex(data);
     }
   }, [data]);
+
+  // Add WebGL context loss handlers
+  useEffect(() => {
+    const canvas = canvasRef.current?.querySelector('canvas');
+    if (canvas) {
+      canvas.addEventListener('webglcontextlost', handleWebGLContextLoss);
+      canvas.addEventListener('webglcontextrestored', handleWebGLContextRestored);
+      
+      return () => {
+        canvas.removeEventListener('webglcontextlost', handleWebGLContextLoss);
+        canvas.removeEventListener('webglcontextrestored', handleWebGLContextRestored);
+      };
+    }
+  }, []);
 
   const bounds = useMemo(() => {
     if (data.length === 0) {
@@ -263,13 +301,22 @@ export default function ScatterPlot3D(props: ScatterPlot3DProps) {
   }, [data]);
 
   return (
-    <div style={{ width: '100%', height: '100%', background: 'var(--background-color)' }}>
+    <div ref={canvasRef} style={{ width: '100%', height: '100%', background: 'var(--background-color)' }}>
       <Canvas
+        key="scatter-3d-canvas"
         gl={{ 
           antialias: false,
           powerPreference: 'high-performance',
+          preserveDrawingBuffer: false,
+          failIfMajorPerformanceCaveat: false,
         }}
         performance={{ min: 0.5 }}
+        onCreated={({ gl }) => {
+          // Suppress WebGL context loss errors
+          gl.domElement.addEventListener('webglcontextlost', (e) => {
+            e.preventDefault();
+          });
+        }}
       >
         <PerspectiveCamera
           makeDefault
