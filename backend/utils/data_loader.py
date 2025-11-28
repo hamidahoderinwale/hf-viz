@@ -14,25 +14,118 @@ class ModelDataLoader:
         self.dataset_name = dataset_name
         self.df: Optional[pd.DataFrame] = None
         
-    def load_data(self, sample_size: Optional[int] = None, split: str = "train") -> pd.DataFrame:
+    def load_data(self, sample_size: Optional[int] = None, split: str = "train", 
+                  prioritize_base_models: bool = True) -> pd.DataFrame:
         """
-        Load dataset from Hugging Face Hub.
+        Load dataset from Hugging Face Hub with methodological sampling.
         
         Args:
-            sample_size: If provided, randomly sample this many rows
+            sample_size: If provided, sample this many rows using stratified approach
             split: Dataset split to load
+            prioritize_base_models: If True, prioritize base models (no parent) in sampling
             
         Returns:
             DataFrame with model data
         """
         dataset = load_dataset(self.dataset_name, split=split)
+        df_full = dataset.to_pandas()
         
-        if sample_size and len(dataset) > sample_size:
-            dataset = dataset.shuffle(seed=42).select(range(sample_size))
+        if sample_size and len(df_full) > sample_size:
+            if prioritize_base_models:
+                # Methodological sampling: prioritize base models
+                df_full = self._stratified_sample(df_full, sample_size)
+            else:
+                # Random sampling (old approach)
+                dataset = dataset.shuffle(seed=42).select(range(sample_size))
+                df_full = dataset.to_pandas()
         
-        self.df = dataset.to_pandas()
-        
+        self.df = df_full
         return self.df
+    
+    def _stratified_sample(self, df: pd.DataFrame, sample_size: int) -> pd.DataFrame:
+        """
+        Stratified sampling prioritizing base models and popular models.
+        
+        Strategy:
+        1. Include ALL base models (no parent) if they fit in sample_size
+        2. Add popular models (high downloads/likes)
+        3. Fill remaining with diverse models across libraries/tasks
+        
+        Args:
+            df: Full DataFrame
+            sample_size: Target sample size
+            
+        Returns:
+            Sampled DataFrame
+        """
+        # Identify base models (no parent)
+        # parent_model is stored as string representation of list: '[]' for base models
+        base_models = df[
+            df['parent_model'].isna() | 
+            (df['parent_model'] == '') | 
+            (df['parent_model'] == '[]') |
+            (df['parent_model'] == 'null')
+        ]
+        
+        # Start with base models
+        if len(base_models) <= sample_size:
+            # All base models fit - include them all
+            sampled = base_models.copy()
+            remaining_size = sample_size - len(sampled)
+            
+            # Get non-base models
+            non_base = df[~df.index.isin(sampled.index)]
+            
+            if remaining_size > 0 and len(non_base) > 0:
+                # Add popular derived models and diverse samples
+                # Sort by downloads + likes for popularity
+                non_base['popularity_score'] = (
+                    non_base.get('downloads', 0).fillna(0) + 
+                    non_base.get('likes', 0).fillna(0) * 100  # Weight likes more
+                )
+                
+                # Take top 50% by popularity, 50% stratified by library
+                popular_size = min(remaining_size // 2, len(non_base))
+                diverse_size = remaining_size - popular_size
+                
+                # Popular models
+                popular_models = non_base.nlargest(popular_size, 'popularity_score')
+                sampled = pd.concat([sampled, popular_models])
+                
+                # Diverse sampling across libraries
+                if diverse_size > 0:
+                    remaining = non_base[~non_base.index.isin(popular_models.index)]
+                    if len(remaining) > 0:
+                        # Stratify by library if possible
+                        if 'library_name' in remaining.columns:
+                            libraries = remaining['library_name'].value_counts()
+                            diverse_samples = []
+                            per_library = max(1, diverse_size // len(libraries))
+                            
+                            for library in libraries.index:
+                                lib_models = remaining[remaining['library_name'] == library]
+                                n_sample = min(per_library, len(lib_models))
+                                diverse_samples.append(lib_models.sample(n=n_sample, random_state=42))
+                            
+                            diverse_df = pd.concat(diverse_samples).head(diverse_size)
+                        else:
+                            diverse_df = remaining.sample(n=min(diverse_size, len(remaining)), random_state=42)
+                        
+                        sampled = pd.concat([sampled, diverse_df])
+                
+                sampled = sampled.drop(columns=['popularity_score'], errors='ignore')
+        else:
+            # Too many base models - sample from them strategically
+            # Prioritize popular base models
+            base_models = base_models.copy()  # Avoid SettingWithCopyWarning
+            base_models['popularity_score'] = (
+                base_models.get('downloads', 0).fillna(0) + 
+                base_models.get('likes', 0).fillna(0) * 100
+            )
+            sampled = base_models.nlargest(sample_size, 'popularity_score')
+            sampled = sampled.drop(columns=['popularity_score'], errors='ignore')
+        
+        return sampled.reset_index(drop=True)
     
     def preprocess_for_embedding(self, df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """
@@ -55,12 +148,16 @@ class ModelDataLoader:
             if field in df.columns:
                 df[field] = df[field].fillna('')
         
+        # Build combined text from available fields
         df['combined_text'] = (
             df.get('tags', '').astype(str) + ' ' +
             df.get('pipeline_tag', '').astype(str) + ' ' +
-            df.get('library_name', '').astype(str) + ' ' +
-            df['modelCard'].astype(str).str[:500]
+            df.get('library_name', '').astype(str)
         )
+        
+        # Add modelCard if available (only in withmodelcards dataset)
+        if 'modelCard' in df.columns:
+            df['combined_text'] = df['combined_text'] + ' ' + df['modelCard'].astype(str).str[:500]
         
         return df
     

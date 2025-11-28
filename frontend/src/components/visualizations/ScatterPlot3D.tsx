@@ -1,1506 +1,306 @@
-/**
- * 3D scatter plot using Three.js and React Three Fiber.
- * Interactive 3D latent space navigator with family tree visualization.
- */
-/// <reference types="@react-three/fiber" />
-import React, { useMemo, useRef, useEffect, useState, useCallback, memo } from 'react';
+import React, { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, Line } from '@react-three/drei';
+import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import { ModelPoint } from '../../types';
-import { getCategoricalColorMap, getContinuousColorScale } from '../../utils/rendering/colors';
 import { createSpatialIndex } from '../../utils/rendering/spatialIndex';
-import { filterVisiblePoints, adaptiveSampleByDistance } from '../../utils/rendering/frustumCulling';
-import { applySpatialSparsity, getAdaptiveSparsityFactor, calculateAverageDistance } from '../../utils/rendering/spatialSparsity';
-import { transformLayout } from '../../utils/rendering/layoutTransforms';
-import InstancedPoints from './InstancedPoints';
-import ColorLegend from '../ui/ColorLegend';
+import { adaptiveSampleByDistance } from '../../utils/rendering/frustumCulling';
 
 interface ScatterPlot3DProps {
-  width: number;
-  height: number;
   data: ModelPoint[];
-  familyTree?: ModelPoint[];
   colorBy: string;
   sizeBy: string;
-  colorScheme?: 'viridis' | 'plasma' | 'inferno' | 'magma' | 'coolwarm';
-  showLegend?: boolean;
-  showLabels?: boolean;
-  zoomLevel?: number;
-  nodeDensity?: number; // Percentage of nodes to render (10-100)
-  renderingStyle?: 'embeddings' | 'sphere' | 'galaxy' | 'wave' | 'helix' | 'torus';
-  showNetworkEdges?: boolean;
-  showStructuralGroups?: boolean;
-  overviewMode?: boolean;
-  networkEdgeType?: 'library' | 'pipeline' | 'combined';
   onPointClick?: (model: ModelPoint) => void;
-  selectedModelId?: string | null;
-  selectedModel?: ModelPoint | null; // Full model object for distance calculations
-  onViewChange?: (center: { x: number; y: number; z: number }) => void;
-  onHover?: (model: ModelPoint | null, pointer?: { x: number; y: number }) => void;
-  targetViewCenter?: { x: number; y: number; z: number } | null;
-  highlightedPath?: string[]; // Model IDs in path to highlight
-  showDistanceHeatmap?: boolean; // Show distance visualization
+  hoveredModel?: ModelPoint | null;
+  onHover?: (model: ModelPoint | null, position?: { x: number; y: number }) => void;
 }
 
-interface PointProps {
-  position: [number, number, number];
-  color: string;
-  size: number;
-  model: ModelPoint;
-  isSelected: boolean;
-  isFamilyMember: boolean;
-  isInPath: boolean;
-  distanceFromSelected?: number;
-  maxDistance?: number;
-  onClick: () => void;
-  onHover?: (model: ModelPoint | null, pointer?: { x: number; y: number }) => void;
+function getModelColor(model: ModelPoint, colorBy: string, colorScale: any): string {
+  if (colorBy === 'library_name' || colorBy === 'pipeline_tag') {
+    const value = colorBy === 'library_name' 
+      ? (model.library_name || 'unknown') 
+      : (model.pipeline_tag || 'unknown');
+    return colorScale.get(value) || '#999999';
+  } else {
+    const val = colorBy === 'downloads' ? model.downloads : model.likes;
+    const logVal = Math.log10(val + 1);
+    return colorScale(logVal);
+  }
 }
 
-// Memoized Point component with enhanced visual effects
-const Point = memo(function Point({ 
-  position, 
-  color, 
-  size, 
-  model, 
-  isSelected, 
-  isFamilyMember, 
-  isInPath,
-  distanceFromSelected,
-  maxDistance,
-  onClick, 
-  onHover 
-}: PointProps) {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const glowRef = useRef<THREE.Mesh>(null);
-  const outlineRef = useRef<THREE.Mesh>(null);
-  const [hovered, setHovered] = useState(false);
-  const { camera } = useThree();
-  
-  // Smooth size transition
-  const targetScale = useRef(size);
-  const currentScale = useRef(size);
-  
-  // Update target scale when hover/selection changes
-  useEffect(() => {
-    targetScale.current = (hovered || isSelected) ? size * 1.5 : size;
-  }, [hovered, isSelected, size]);
-
-  useFrame(() => {
-    if (!meshRef.current || !camera) return;
-    
-    // Smooth size transition using lerp
-    currentScale.current += (targetScale.current - currentScale.current) * 0.15;
-    meshRef.current.scale.setScalar(currentScale.current);
-    
-    // Calculate distance from camera for depth-based opacity
-    const distance = meshRef.current.position.distanceTo(camera.position);
-    const maxDistance = 10;
-    const minDistance = 1;
-    const distanceFactor = Math.max(0.3, Math.min(1, 1 - (distance - minDistance) / (maxDistance - minDistance)));
-    
-    // Update opacity based on distance - Increased base opacity for better visibility
-    if (meshRef.current.material instanceof THREE.MeshStandardMaterial) {
-      const baseOpacity = isSelected || isFamilyMember ? 1 : hovered ? 0.98 : 0.95;
-      meshRef.current.material.opacity = Math.max(0.7, baseOpacity * distanceFactor);
-    }
-    
-      // Subtle animation for selected/family members
-      if (isSelected || isFamilyMember) {
-        meshRef.current.rotation.y += 0.01;
-    }
-    
-    // Glow effect for selected/hovered points
-    if (glowRef.current) {
-      glowRef.current.scale.setScalar(currentScale.current * 1.5);
-      if (glowRef.current.material instanceof THREE.MeshStandardMaterial) {
-        glowRef.current.material.opacity = (isSelected ? 0.4 : hovered ? 0.2 : 0) * distanceFactor;
-      }
-    }
-    
-    // Outline effect
-    if (outlineRef.current) {
-      outlineRef.current.scale.setScalar(currentScale.current * 1.1);
-      if (outlineRef.current.material instanceof THREE.MeshBasicMaterial) {
-        outlineRef.current.material.opacity = (isSelected ? 0.8 : hovered ? 0.5 : 0) * distanceFactor;
-      }
-    }
-  });
-
-  return (
-    <group>
-      {/* Glow effect */}
-      {(isSelected || hovered) && (
-        <mesh ref={glowRef} position={position}>
-          <sphereGeometry args={[0.02, 16, 16]} />
-          <meshStandardMaterial
-            color={isSelected ? '#ffffff' : color}
-            emissive={isSelected ? '#ffffff' : color}
-            emissiveIntensity={1}
-            transparent
-            opacity={0}
-            side={THREE.BackSide}
-          />
-        </mesh>
-      )}
-      
-      {/* Outline effect */}
-      {(isSelected || hovered) && (
-        <mesh ref={outlineRef} position={position}>
-          <sphereGeometry args={[0.02, 16, 16]} />
-          <meshBasicMaterial
-            color={isSelected ? '#ffffff' : '#ffffff'}
-            transparent
-            opacity={0}
-            side={THREE.BackSide}
-            depthWrite={false}
-          />
-        </mesh>
-      )}
-      
-      {/* Main point */}
-    <mesh
-      ref={meshRef}
-      position={position}
-      onClick={onClick}
-        onPointerOver={(e) => {
-        setHovered(true);
-          if (onHover) {
-            onHover(model, { 
-              x: e.clientX, 
-              y: e.clientY 
-            });
-          }
-      }}
-      onPointerOut={() => {
-        setHovered(false);
-        if (onHover) onHover(null);
-      }}
-        onPointerMove={(e) => {
-          if (hovered && onHover) {
-            onHover(model, { 
-              x: e.clientX, 
-              y: e.clientY 
-            });
-          }
-        }}
-        frustumCulled={true}
-      >
-        <sphereGeometry args={[0.02, 12, 12]} />
-        <meshStandardMaterial
-        color={isSelected ? '#ffffff' : isInPath ? '#ff6b6b' : isFamilyMember ? '#4a4a4a' : color}
-        emissive={isSelected ? '#ffffff' : isInPath ? '#ff6b6b' : isFamilyMember ? '#6a6a6a' : color}
-          emissiveIntensity={isSelected ? 0.6 : isInPath ? 0.4 : isFamilyMember ? 0.2 : 0.15}
-          metalness={0.2}
-          roughness={0.6}
-          opacity={0.95}
-        transparent
-      />
-    </mesh>
-    </group>
-  );
-}, (prevProps, nextProps) => {
-  // Custom comparison function for memo
-  return (
-    prevProps.model.model_id === nextProps.model.model_id &&
-    prevProps.isSelected === nextProps.isSelected &&
-    prevProps.isFamilyMember === nextProps.isFamilyMember &&
-    prevProps.isInPath === nextProps.isInPath &&
-    prevProps.distanceFromSelected === nextProps.distanceFromSelected &&
-    prevProps.color === nextProps.color &&
-    prevProps.size === nextProps.size &&
-    prevProps.position[0] === nextProps.position[0] &&
-    prevProps.position[1] === nextProps.position[1] &&
-    prevProps.position[2] === nextProps.position[2]
-  );
-});
-
-interface FamilyEdgeProps {
-  start: [number, number, number];
-  end: [number, number, number];
-  parentColor: string;
-  childColor: string;
-  depth: number;
+function getPointSize(model: ModelPoint, sizeBy: string): number {
+  if (sizeBy === 'none') return 0.02;
+  const val = sizeBy === 'downloads' ? model.downloads : model.likes;
+  const logVal = Math.log10(val + 1);
+  return 0.01 + (logVal / 7) * 0.04;
 }
 
-function FamilyEdge({ start, end, parentColor, childColor, depth }: FamilyEdgeProps) {
-  const points = useMemo(() => [new THREE.Vector3(...start), new THREE.Vector3(...end)], [start, end]);
-  const flowRef = useRef<THREE.Mesh>(null);
-  const flowProgress = useRef(0);
-  
-  // Interpolate color between parent and child for gradient effect
-  const interpolatedColor = useMemo(() => {
-    const parent = new THREE.Color(parentColor);
-    const child = new THREE.Color(childColor);
-    const mid = new THREE.Color().lerpColors(parent, child, 0.5);
-    return `#${mid.getHexString()}`;
-  }, [parentColor, childColor]);
-  
-  // Depth-based opacity and thickness
-  const depthFactor = Math.min(depth / 5, 1);
-  const opacity = 0.6 + depthFactor * 0.4;
-  const lineWidth = 2.5 + depth * 0.4;
-  
-  // Animated flow along edge
-  useFrame((state, delta) => {
-    if (!flowRef.current) return;
-    
-    flowProgress.current += delta * 0.5; // Flow speed
-    if (flowProgress.current > 1) flowProgress.current = 0;
-    
-    // Position flow particle along the edge
-    const startVec = new THREE.Vector3(...start);
-    const endVec = new THREE.Vector3(...end);
-    const direction = new THREE.Vector3().subVectors(endVec, startVec);
-    const position = new THREE.Vector3().addVectors(startVec, direction.multiplyScalar(flowProgress.current));
-    
-    flowRef.current.position.copy(position);
-    
-    // Pulse effect
-    const pulse = Math.sin(flowProgress.current * Math.PI * 2) * 0.3 + 0.7;
-    flowRef.current.scale.setScalar(pulse);
-  });
-  
-  return (
-    <group>
-      {/* Main edge with interpolated color - thicker and more visible */}
-    <Line
-      points={points}
-        color={interpolatedColor}
-        lineWidth={lineWidth}
-      dashed={false}
-        transparent
-        opacity={opacity}
-      />
-      
-      {/* Animated flow particle */}
-      <mesh ref={flowRef} position={start}>
-        <sphereGeometry args={[0.015, 8, 8]} />
-        <meshBasicMaterial
-          color={childColor}
-          transparent
-          opacity={0.8}
-        />
-      </mesh>
-    </group>
-  );
-}
-
-// Memoize SceneContent to prevent unnecessary re-renders
-const SceneContent = memo(function SceneContent({
-  data,
-  familyTree,
-  colorBy,
-  sizeBy,
-  colorScheme = 'viridis',
-  showLabels = false,
-  nodeDensity = 100,
-  renderingStyle = 'embeddings',
-  showNetworkEdges = false,
-  showStructuralGroups = false,
-  overviewMode = false,
-  networkEdgeType = 'combined',
-  onPointClick,
-  selectedModelId,
-  selectedModel,
-  onHover,
-  isInteracting = false,
-  highlightedPath = [],
-  showDistanceHeatmap = false,
-}: Omit<ScatterPlot3DProps, 'width' | 'height' | 'showLegend' | 'onViewChange' | 'targetViewCenter' | 'zoomLevel'> & { isInteracting?: boolean }) {
-  const { camera, gl } = useThree();
-  const [useInstancedRendering, setUseInstancedRendering] = useState(false);
-  const cameraPositionRef = useRef<THREE.Vector3>(new THREE.Vector3());
-  const lastCameraPositionRef = useRef<THREE.Vector3>(new THREE.Vector3());
-  const movementSpeedRef = useRef<number>(0);
-
-  // Track camera movement for adaptive quality with throttling
-  const frameCountRef = useRef(0);
-  useFrame(() => {
-    if (camera) {
-      frameCountRef.current++;
-      // Only check movement every 3rd frame to reduce overhead
-      if (frameCountRef.current % 3 === 0) {
-        camera.getWorldPosition(cameraPositionRef.current);
-        const movement = cameraPositionRef.current.distanceTo(lastCameraPositionRef.current);
-        movementSpeedRef.current = movement;
-        lastCameraPositionRef.current.copy(cameraPositionRef.current);
-        
-        // Use instanced rendering for large datasets (more efficient for >5K points)
-        // Always use for datasets > 10K, or when moving fast with >5K points
-        setUseInstancedRendering(data.length > 5000 || (data.length > 1000 && movementSpeedRef.current > 0.01));
-      }
-    }
-  });
-
-  // Create spatial index for efficient queries
-  const spatialIndex = useMemo(() => {
-    if (data.length === 0) return null;
-    return createSpatialIndex(data);
-  }, [data]);
-
-  // Level-of-detail: sample data for performance when there are too many points
-  // Use camera-based culling, adaptive sampling, and spatial sparsity
-  const sampledData = useMemo(() => {
-    if (data.length === 0) return [];
-    
-    // Apply node density filter first
-    const densityFilteredData = nodeDensity < 100 
-      ? data.filter((_, idx) => (idx % Math.ceil(100 / nodeDensity)) === 0)
-      : data;
-    
-    // Keep all family tree members and selected models
-    const familyIds = new Set(familyTree?.map(m => m.model_id) || []);
-    const importantIds = new Set<string>();
-    const important: ModelPoint[] = [];
-    const others: ModelPoint[] = [];
-    
-    for (const d of densityFilteredData) {
-      if (familyIds.has(d.model_id) || selectedModelId === d.model_id) {
-        important.push(d);
-        importantIds.add(d.model_id);
-      } else {
-        others.push(d);
-      }
-    }
-
-    // For very large datasets, use spatial indexing and camera-based culling
-    // Use instanced rendering for datasets > 10K points
-    if (densityFilteredData.length > 10000 && spatialIndex && camera && gl) {
-      // Use adaptive sampling based on distance from camera
-      // When moving fast, reduce quality more aggressively for better performance
-      const qualityFactor = isInteracting && movementSpeedRef.current > 0.01 ? 0.4 : 0.7; // More aggressive reduction when interacting
-      const maxDistance = 15 * qualityFactor; // Reduced view distance for better performance
-      
-      // More aggressive sampling strategy for smoother performance
-      let distanceSampled: ModelPoint[];
-      if (others.length > 400000) {
-        // For extremely large datasets (>400K), sample 15% (reduced from 30%)
-        const sampleRate = qualityFactor * 0.15;
-        const step = Math.ceil(1 / sampleRate);
-        distanceSampled = [];
-        for (let i = 0; i < others.length; i += step) {
-          distanceSampled.push(others[i]);
-        }
-      } else if (others.length > 200000) {
-        // For very large datasets (200K-400K), sample 20% (reduced from 40%)
-        const sampleRate = qualityFactor * 0.2;
-        const step = Math.ceil(1 / sampleRate);
-        distanceSampled = [];
-        for (let i = 0; i < others.length; i += step) {
-          distanceSampled.push(others[i]);
-        }
-      } else if (others.length > 100000) {
-        // For large datasets (100K-200K), sample 30% (reduced from 50%)
-        const sampleRate = qualityFactor * 0.3;
-        const step = Math.ceil(1 / sampleRate);
-        distanceSampled = [];
-        for (let i = 0; i < others.length; i += step) {
-          distanceSampled.push(others[i]);
-        }
-      } else {
-        // Use adaptive sampling with reduced rate for better performance
-        distanceSampled = adaptiveSampleByDistance(others, camera, qualityFactor * 0.6, maxDistance); // Reduced from 0.85
-      }
-      
-      // Apply frustum culling if camera is available
-      // Reduced limit for smoother performance
-      const maxVisible = Math.min(distanceSampled.length, isInteracting ? 50000 : 100000); // Much lower when interacting
-      let visible: ModelPoint[];
-      try {
-        visible = filterVisiblePoints(
-          distanceSampled.slice(0, maxVisible), 
-          camera, 
-          gl, 
-          maxDistance, 
-          0.01 // Lower LOD threshold to show more points (was 0.02)
-        );
-      } catch (e) {
-        // Fallback if frustum calculation fails
-        visible = distanceSampled.slice(0, maxVisible);
-      }
-      
-      // Apply spatial sparsity to reduce density and improve navigability
-      // But be less aggressive to show more models
-      const combined = [...important, ...visible];
-      if (combined.length > 5000) { // Increased threshold from 3000
-        // Calculate adaptive minimum distance based on data spread
-        const avgDistance = calculateAverageDistance(combined);
-        const sparsityFactor = getAdaptiveSparsityFactor(combined.length) * 1.2; // Reduced from 1.5 to show more
-        const minDistance = avgDistance * sparsityFactor;
-        
-        if (minDistance > 0) {
-          return applySpatialSparsity(combined, minDistance, importantIds);
-        }
-      }
-      
-      return combined;
-    }
-    
-    // For smaller datasets, use simple sampling with sparsity
-    // Reduced render limit for smoother performance
-    const renderLimit = densityFilteredData.length > 100000 ? (isInteracting ? 50000 : 100000) : densityFilteredData.length; // Lower when interacting
-    if (densityFilteredData.length <= renderLimit) {
-      // Still apply sparsity even if under limit for better navigability
-      // But be less aggressive to show more models
-      if (densityFilteredData.length > 5000) { // Increased threshold from 3000
-        const avgDistance = calculateAverageDistance(densityFilteredData);
-        const sparsityFactor = getAdaptiveSparsityFactor(densityFilteredData.length) * 1.2; // Reduced from 1.5
-        const minDistance = avgDistance * sparsityFactor;
-        if (minDistance > 0) {
-          return applySpatialSparsity(densityFilteredData, minDistance, importantIds);
-        }
-      }
-      return densityFilteredData;
-    }
-    
-    // Sample from others, keep all important
-    const sampleSize = Math.min(renderLimit - important.length, others.length);
-    let sampled: ModelPoint[];
-    if (others.length > sampleSize) {
-      // Use efficient sampling - use every Nth element for better distribution
-      const step = Math.ceil(others.length / sampleSize);
-      sampled = [];
-      for (let i = 0; i < others.length && sampled.length < sampleSize; i += step) {
-        sampled.push(others[i]);
-      }
-    } else {
-      sampled = others;
-    }
-    
-    // Apply spatial sparsity to reduce density
-    const combined = [...important, ...sampled];
-    if (combined.length > 3000) { // Lower threshold
-      const avgDistance = calculateAverageDistance(combined);
-      const sparsityFactor = getAdaptiveSparsityFactor(combined.length) * 1.5; // Increase sparsity
-      const minDistance = avgDistance * sparsityFactor;
-      
-      if (minDistance > 0) {
-        return applySpatialSparsity(combined, minDistance, importantIds);
-      }
-    }
-    
-    return combined;
-  }, [data, nodeDensity, familyTree, selectedModelId, spatialIndex, camera, gl, isInteracting]);
-
-  // Cache scales to avoid recalculation
-  const scalesCacheRef = useRef<{
-    dataLength: number;
-    colorBy: string;
-    sizeBy: string;
-    colorScheme: string;
-    scales: any;
-  } | null>(null);
-
-  const { xScale, yScale, zScale, colorScale, sizeScale, familyMap, pathSet } = useMemo(() => {
-    // Return cached scales if inputs haven't changed
-    if (scalesCacheRef.current &&
-        scalesCacheRef.current.dataLength === sampledData.length &&
-        scalesCacheRef.current.colorBy === colorBy &&
-        scalesCacheRef.current.sizeBy === sizeBy &&
-        scalesCacheRef.current.colorScheme === colorScheme &&
-        sampledData.length > 0) {
-      return scalesCacheRef.current.scales;
-    }
-    if (sampledData.length === 0) {
-      return {
-        xScale: (x: number) => x,
-        yScale: (y: number) => y,
-        zScale: (z: number) => z,
-        colorScale: () => '#808080',
-        sizeScale: () => 1,
-        familyMap: new Map<string, ModelPoint>(),
-      };
-    }
-
-    // Optimize extent calculation with single pass (faster than multiple map operations)
-    let xMin = Infinity, xMax = -Infinity;
-    let yMin = Infinity, yMax = -Infinity;
-    let zMin = Infinity, zMax = -Infinity;
-    
-    for (let i = 0; i < sampledData.length; i++) {
-      const d = sampledData[i];
-      if (d.x < xMin) xMin = d.x;
-      if (d.x > xMax) xMax = d.x;
-      if (d.y < yMin) yMin = d.y;
-      if (d.y > yMax) yMax = d.y;
-      if (d.z < zMin) zMin = d.z;
-      if (d.z > zMax) zMax = d.z;
-    }
-    
-    const xExtent = [xMin, xMax] as [number, number];
-    const yExtent = [yMin, yMax] as [number, number];
-    const zExtent = [zMin, zMax] as [number, number];
-
-    // Normalize to [-1.5, 1.5] range for better 3D visualization with more space
-    const xRange = xExtent[1] - xExtent[0] || 1;
-    const yRange = yExtent[1] - yExtent[0] || 1;
-    const zRange = zExtent[1] - zExtent[0] || 1;
-
-    // Scale to slightly larger range for better visibility
-    const scaleFactor = 1.5;
-    const xScale = (x: number) => ((x - xExtent[0]) / xRange - 0.5) * 2 * scaleFactor;
-    const yScale = (y: number) => ((y - yExtent[0]) / yRange - 0.5) * 2 * scaleFactor;
-    const zScale = (z: number) => ((z - zExtent[0]) / zRange - 0.5) * 2 * scaleFactor;
-
-    // Color scale with improved color schemes
-    const isCategorical = colorBy === 'library_name' || colorBy === 'pipeline_tag' || colorBy === 'cluster_id';
-    let colorScale: (d: ModelPoint) => string;
-
-    if (colorBy === 'cluster_id') {
-      // Color by cluster - use distinct colors for each cluster
-      const clusters = Array.from(new Set(sampledData.map((d: ModelPoint) => d.cluster_id).filter((id: number | null): id is number => id !== null))) as number[];
-      const colorMap = getCategoricalColorMap(clusters.map(String), 'default');
-      colorScale = (d: ModelPoint) => {
-        return d.cluster_id !== null ? colorMap.get(String(d.cluster_id)) || '#808080' : '#808080';
-      };
-    } else if (colorBy === 'family_depth') {
-      // Color by family depth - use sequential color scale (darker = deeper)
-      const depths = sampledData.map((d: ModelPoint) => d.family_depth ?? 0);
-      const maxDepth = Math.max(...depths, 1);
-      const continuousScale = getContinuousColorScale(0, maxDepth, colorScheme);
-      colorScale = (d: ModelPoint) => {
-        const depth = d.family_depth ?? 0;
-        return continuousScale(depth);
-      };
-    } else if (colorBy === 'licenses') {
-      // Color by license type (categorical)
-      const licenses = Array.from(new Set(sampledData.map((d: ModelPoint) => {
-        if (!d.licenses) return 'No License';
-        const licenseStr = d.licenses.toString();
-        // Extract first license from string
-        try {
-          if (licenseStr.startsWith('[')) {
-            const cleaned = licenseStr.replace(/'/g, '"');
-            const parsed = JSON.parse(cleaned);
-            return Array.isArray(parsed) && parsed.length > 0 ? parsed[0] : 'No License';
-          }
-          return licenseStr.split(',')[0].trim() || 'No License';
-        } catch {
-          return licenseStr.split(',')[0].trim() || 'No License';
-        }
-      })));
-      const colorMap = getCategoricalColorMap(licenses as string[], 'default');
-      colorScale = (d: ModelPoint) => {
-        if (!d.licenses) return colorMap.get('No License') || '#808080';
-        const licenseStr = d.licenses.toString();
-        try {
-          if (licenseStr.startsWith('[')) {
-            const cleaned = licenseStr.replace(/'/g, '"');
-            const parsed = JSON.parse(cleaned);
-            const firstLicense = Array.isArray(parsed) && parsed.length > 0 ? parsed[0] : 'No License';
-            return colorMap.get(firstLicense) || '#808080';
-          }
-          const firstLicense = licenseStr.split(',')[0].trim() || 'No License';
-          return colorMap.get(firstLicense) || '#808080';
-        } catch {
-          const firstLicense = licenseStr.split(',')[0].trim() || 'No License';
-          return colorMap.get(firstLicense) || '#808080';
-        }
-      };
-    } else if (colorBy === 'trending_score') {
-      // Color by trending score
-      const scores = sampledData.map((d: ModelPoint) => d.trending_score ?? 0).filter((s: number | null): s is number => s !== null);
-      if (scores.length > 0) {
-        const min = Math.min(...scores);
-        const max = Math.max(...scores);
-        const continuousScale = getContinuousColorScale(min, max, colorScheme);
-        colorScale = (d: ModelPoint) => {
-          const score = d.trending_score ?? 0;
-          return continuousScale(score);
-        };
-      } else {
-        colorScale = () => '#808080';
-      }
-    } else if (isCategorical) {
-      const categories = Array.from(new Set(sampledData.map((d: ModelPoint) => {
-        if (colorBy === 'library_name') return d.library_name || 'unknown';
-        return d.pipeline_tag || 'unknown';
-      })));
-      const colorScheme = colorBy === 'library_name' ? 'library' : 'pipeline';
-      const colorMap = getCategoricalColorMap(categories as string[], colorScheme);
-      colorScale = (d: ModelPoint) => {
-        const val = colorBy === 'library_name' ? d.library_name : d.pipeline_tag;
-        return colorMap.get(val || 'unknown') || '#808080';
-      };
-    } else {
-      const values = sampledData.map((d: ModelPoint) => colorBy === 'downloads' ? d.downloads : d.likes);
-      const min = Math.min(...values);
-      const max = Math.max(...values);
-      // Use logarithmic scaling for downloads/likes (heavily skewed distributions)
-      // This provides better visual representation of the data
-      const useLogScale = colorBy === 'downloads' || colorBy === 'likes';
-      const continuousScale = getContinuousColorScale(min, max, colorScheme, useLogScale);
-      colorScale = (d: ModelPoint) => {
-        const val = colorBy === 'downloads' ? d.downloads : d.likes;
-        return continuousScale(val);
-      };
-    }
-
-    // Size scale with logarithmic scaling for better representation of skewed distributions
-    const sizeValues = sampledData.map((d: ModelPoint) => {
-      if (sizeBy === 'downloads') return d.downloads;
-      if (sizeBy === 'likes') return d.likes;
-      return 1;
-    });
-    const sizeMin = Math.min(...sizeValues);
-    const sizeMax = Math.max(...sizeValues);
-    // Use logarithmic scaling for downloads/likes to better represent the distribution
-    const useLogSize = sizeBy === 'downloads' || sizeBy === 'likes';
-    const logSizeMin = useLogSize && sizeMin > 0 ? Math.log10(sizeMin + 1) : sizeMin;
-    const logSizeMax = useLogSize && sizeMax > 0 ? Math.log10(sizeMax + 1) : sizeMax;
-    const logSizeRange = logSizeMax - logSizeMin || 1;
-    const sizeRange = sizeMax - sizeMin || 1;
-    const sizeScale = (d: ModelPoint) => {
-      let normalizedSize: number;
-      const val = sizeBy === 'downloads' ? d.downloads : sizeBy === 'likes' ? d.likes : 1;
-      if (useLogSize && val > 0) {
-        const logVal = Math.log10(val + 1);
-        normalizedSize = (logVal - logSizeMin) / logSizeRange;
-      } else {
-        normalizedSize = (val - sizeMin) / sizeRange;
-      }
-      // Scale from 0.5 to 3.0 for better visibility
-      return 0.5 + Math.max(0, Math.min(1, normalizedSize)) * 2.5;
-    };
-
-    // Family map
-    const familyMap = new Map<string, ModelPoint>();
-    if (familyTree) {
-      familyTree.forEach(model => {
-        familyMap.set(model.model_id, model);
-      });
-    }
-
-    // Path set for highlighted path
-    const pathSet = new Set<string>(highlightedPath || []);
-
-    const scales = { xScale, yScale, zScale, colorScale, sizeScale, familyMap, pathSet };
-    
-    // Cache the scales
-    scalesCacheRef.current = {
-      dataLength: sampledData.length,
-      colorBy,
-      sizeBy,
-      colorScheme,
-      scales,
-    };
-    
-    return scales;
-  }, [sampledData, familyTree, colorBy, sizeBy, colorScheme, highlightedPath]);
-
-  // Build family edges with color coding by depth
-  const familyEdges = useMemo(() => {
-    if (!familyTree || familyTree.length === 0) return [];
-    
-    const edges: Array<{ 
-      start: [number, number, number]; 
-      end: [number, number, number]; 
-      model: ModelPoint;
-      parentColor: string;
-      childColor: string;
-      depth: number;
-    }> = [];
-    const modelMap = new Map(familyTree.map(m => [m.model_id, m]));
-    
-    // Get color scale for family depth
-    const maxDepth = Math.max(...familyTree.map(m => m.family_depth ?? 0), 1);
-    const depthColorScale = getContinuousColorScale(0, maxDepth, colorScheme);
-
-    familyTree.forEach(model => {
-      if (model.parent_model && modelMap.has(model.parent_model)) {
-        const parent = modelMap.get(model.parent_model)!;
-        const parentDepth = parent.family_depth ?? 0;
-        const childDepth = model.family_depth ?? 0;
-        
-        // Color based on depth - parent to child gradient
-        const parentColor = depthColorScale(parentDepth);
-        const childColor = depthColorScale(childDepth);
-        
-        edges.push({
-          start: [xScale(parent.x), yScale(parent.y), zScale(parent.z)],
-          end: [xScale(model.x), yScale(model.y), zScale(model.z)],
-          model,
-          parentColor,
-          childColor,
-          depth: childDepth,
-        });
-      }
-    });
-
-    return edges;
-  }, [familyTree, xScale, yScale, zScale, colorScheme]);
-
-  // Build network edges (co-occurrence relationships)
-  const networkEdges = useMemo(() => {
-    if (!showNetworkEdges || sampledData.length === 0) return [];
-    
-    const edges: Array<{
-      start: [number, number, number];
-      end: [number, number, number];
-      weight: number;
-      type: string;
-    }> = [];
-    
-    // Model map removed - not currently used
-    
-    // Group models by library, pipeline, or both
-    const groups = new Map<string, ModelPoint[]>();
-    
-    sampledData.forEach((model: ModelPoint) => {
-      if (networkEdgeType === 'library' || networkEdgeType === 'combined') {
-        const key = `lib:${model.library_name || 'unknown'}`;
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key)!.push(model);
-      }
-      if (networkEdgeType === 'pipeline' || networkEdgeType === 'combined') {
-        const key = `pipe:${model.pipeline_tag || 'unknown'}`;
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key)!.push(model);
-      }
-    });
-    
-    // Create edges between models in the same group
-    // Limit to avoid performance issues - only connect nearby models
-    const maxConnectionsPerModel = overviewMode ? 5 : 3;
-    const maxDistance = overviewMode ? 0.5 : 0.3; // Distance threshold in normalized space
-    
-    groups.forEach((models, groupKey) => {
-      if (models.length < 2) return;
-      
-      // For large groups, sample connections
-      const modelsToConnect = models.length > 50 
-        ? models.filter((_, i) => i % Math.ceil(models.length / 50) === 0)
-        : models;
-      
-      for (let i = 0; i < modelsToConnect.length; i++) {
-        const model1 = modelsToConnect[i];
-        let connections = 0;
-        
-        for (let j = i + 1; j < modelsToConnect.length && connections < maxConnectionsPerModel; j++) {
-          const model2 = modelsToConnect[j];
-          
-          // Calculate distance in normalized space
-          const dx = model1.x - model2.x;
-          const dy = model1.y - model2.y;
-          const dz = model1.z - model2.z;
-          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          
-          if (distance < maxDistance) {
-            edges.push({
-              start: [xScale(model1.x), yScale(model1.y), zScale(model1.z)],
-              end: [xScale(model2.x), yScale(model2.y), zScale(model2.z)],
-              weight: 1 - (distance / maxDistance), // Higher weight for closer models
-              type: groupKey.startsWith('lib:') ? 'library' : 'pipeline',
-            });
-            connections++;
-          }
-        }
-      }
-    });
-    
-    return edges;
-  }, [showNetworkEdges, sampledData, networkEdgeType, overviewMode, xScale, yScale, zScale]);
-
-  // Build structural groupings (library/pipeline clusters)
-  const structuralGroups = useMemo(() => {
-    if (!showStructuralGroups || sampledData.length === 0) return [];
-    
-    const groups: Array<{
-      models: ModelPoint[];
-      type: 'library' | 'pipeline';
-      name: string;
-      color: string;
-      center: [number, number, number];
-    }> = [];
-    
-    // Group by library
-    const libraryGroups = new Map<string, ModelPoint[]>();
-    sampledData.forEach((model: ModelPoint) => {
-      const lib = model.library_name || 'unknown';
-      if (!libraryGroups.has(lib)) libraryGroups.set(lib, []);
-      libraryGroups.get(lib)!.push(model);
-    });
-    
-    // Group by pipeline
-    const pipelineGroups = new Map<string, ModelPoint[]>();
-    sampledData.forEach((model: ModelPoint) => {
-      const pipe = model.pipeline_tag || 'unknown';
-      if (!pipelineGroups.has(pipe)) pipelineGroups.set(pipe, []);
-      pipelineGroups.get(pipe)!.push(model);
-    });
-    
-    // Only show groups with multiple models and reasonable size
-    const minGroupSize = overviewMode ? 3 : 5;
-    const maxGroups = overviewMode ? 20 : 10;
-    
-    // Process library groups
-    const sortedLibGroups = Array.from(libraryGroups.entries())
-      .filter(([_, models]) => models.length >= minGroupSize)
-      .sort((a, b) => b[1].length - a[1].length)
-      .slice(0, maxGroups);
-    
-    sortedLibGroups.forEach(([name, models]) => {
-      // Calculate center
-      const centerX = models.reduce((sum, m) => sum + m.x, 0) / models.length;
-      const centerY = models.reduce((sum, m) => sum + m.y, 0) / models.length;
-      const centerZ = models.reduce((sum, m) => sum + m.z, 0) / models.length;
-      
-      groups.push({
-        models,
-        type: 'library',
-        name,
-        color: '#4a90e2',
-        center: [xScale(centerX), yScale(centerY), zScale(centerZ)],
-      });
-    });
-    
-    // Process pipeline groups
-    const sortedPipeGroups = Array.from(pipelineGroups.entries())
-      .filter(([_, models]) => models.length >= minGroupSize)
-      .sort((a, b) => b[1].length - a[1].length)
-      .slice(0, maxGroups);
-    
-    sortedPipeGroups.forEach(([name, models]) => {
-      const centerX = models.reduce((sum, m) => sum + m.x, 0) / models.length;
-      const centerY = models.reduce((sum, m) => sum + m.y, 0) / models.length;
-      const centerZ = models.reduce((sum, m) => sum + m.z, 0) / models.length;
-      
-      groups.push({
-        models,
-        type: 'pipeline',
-        name,
-        color: '#e24a90',
-        center: [xScale(centerX), yScale(centerY), zScale(centerZ)],
-      });
-    });
-    
-    return groups;
-  }, [showStructuralGroups, sampledData, overviewMode, xScale, yScale, zScale]);
-
-  // Calculate distance map for heatmap visualization
-  const { distanceMap, maxDistance } = useMemo(() => {
-    const map = new Map<string, number>();
-    let max = 0;
-    
-    if (showDistanceHeatmap && selectedModel) {
-      sampledData.forEach((model: ModelPoint) => {
-        const dx = model.x - selectedModel.x;
-        const dy = model.y - selectedModel.y;
-        const dz = model.z - selectedModel.z;
-        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        map.set(model.model_id, distance);
-        max = Math.max(max, distance);
-      });
-    }
-    
-    return { distanceMap: map, maxDistance: max || 1 };
-  }, [showDistanceHeatmap, selectedModel, sampledData]);
-
-  // Adjust camera for overview mode
-  useEffect(() => {
-    if (!camera) return;
-    
-    const currentPos = new THREE.Vector3();
-    camera.getWorldPosition(currentPos);
-    const distance = currentPos.length();
-    
-    if (overviewMode) {
-      // Move camera further back to see more of the scene
-      const newDistance = Math.max(distance, 8); // Minimum distance for overview
-      
-      if (newDistance > distance) {
-        // Smoothly animate camera back
-        const targetPos = currentPos.clone().normalize().multiplyScalar(newDistance);
-        const startPos = currentPos.clone();
-        const duration = 1000; // 1 second
-        const startTime = Date.now();
-        
-        const animate = () => {
-          const elapsed = Date.now() - startTime;
-          const progress = Math.min(elapsed / duration, 1);
-          const eased = 1 - Math.pow(1 - progress, 3); // Ease out cubic
-          
-          const pos = startPos.clone().lerp(targetPos, eased);
-          camera.position.copy(pos);
-          
-          if (progress < 1) {
-            requestAnimationFrame(animate);
-          }
-        };
-        
-        animate();
-      }
-    }
-    // Note: When overview mode is disabled, user can manually zoom back in
-    // We don't force camera position to avoid disrupting user's navigation
-  }, [overviewMode, camera]);
-
-  return (
-    <>
-      <ambientLight intensity={0.6} />
-      <pointLight position={[10, 10, 10]} intensity={1.2} />
-      <pointLight position={[-10, -10, -10]} intensity={0.6} />
-      <directionalLight position={[5, 5, 5]} intensity={0.8} />
-
-      {/* Grid for orientation - using custom grid to avoid deprecation warnings */}
-      <gridHelper args={[15, 15, '#9ca3af', '#d1d5db']} />
-
-      {/* Network edges (co-occurrence relationships) */}
-      {networkEdges.length > 0 && (
-        <group>
-          {networkEdges.slice(0, overviewMode ? networkEdges.length : Math.min(networkEdges.length, 5000)).map((edge, i) => (
-            <Line
-              key={`network-${i}`}
-              points={[new THREE.Vector3(...edge.start), new THREE.Vector3(...edge.end)]}
-              color={edge.type === 'library' ? '#4a90e2' : '#e24a90'}
-              lineWidth={overviewMode ? 1.5 : 1}
-              transparent
-              opacity={overviewMode ? 0.2 * edge.weight : 0.3 * edge.weight}
-              dashed={false}
-            />
-          ))}
-        </group>
-      )}
-
-      {/* Structural groupings - show cluster centers and boundaries */}
-      {structuralGroups.map((group, i) => {
-        // Calculate bounding sphere radius from center
-        let maxRadius = 0;
-        group.models.forEach(model => {
-          const modelPos = [
-            xScale(model.x),
-            yScale(model.y),
-            zScale(model.z)
-          ];
-          const dx = modelPos[0] - group.center[0];
-          const dy = modelPos[1] - group.center[1];
-          const dz = modelPos[2] - group.center[2];
-          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          maxRadius = Math.max(maxRadius, distance);
-        });
-        
-        // Add some padding
-        const radius = Math.max(maxRadius * 1.2, 0.2);
-
-        return (
-          <group key={`group-${group.type}-${i}`}>
-            {/* Group center marker */}
-            <mesh position={group.center}>
-              <sphereGeometry args={[0.05, 8, 8]} />
-              <meshBasicMaterial color={group.color} transparent opacity={0.6} />
-            </mesh>
-            {/* Bounding sphere (wireframe) */}
-            <mesh position={group.center}>
-              <sphereGeometry args={[radius, 16, 16]} />
-              <meshBasicMaterial 
-                color={group.color} 
-                wireframe 
-                transparent 
-                opacity={0.15}
-              />
-            </mesh>
-          </group>
-        );
-      })}
-
-      {/* Family tree edges with gradient and animation */}
-      {familyEdges.map((edge, i) => (
-        <FamilyEdge
-          key={`${edge.model.model_id}-${i}`}
-          start={edge.start}
-          end={edge.end}
-          parentColor={edge.parentColor}
-          childColor={edge.childColor}
-          depth={edge.depth}
-        />
-      ))}
-
-      {/* Data points - use instanced rendering for large datasets */}
-      {useInstancedRendering && sampledData.length > 1000 ? (
-        <InstancedPoints
-          points={sampledData.map((m: ModelPoint, idx: number) => {
-            const [tx, ty, tz] = renderingStyle !== 'embeddings' 
-              ? transformLayout(m, renderingStyle, idx, sampledData.length)
-              : [xScale(m.x), yScale(m.y), zScale(m.z)];
-            return {
-              ...m,
-              x: tx,
-              y: ty,
-              z: tz,
-            };
-          })}
-          colors={sampledData.map((m: ModelPoint) => {
-            let color = colorScale(m);
-            if (showDistanceHeatmap && selectedModel) {
-              const dist = distanceMap.get(m.model_id);
-              if (dist !== undefined) {
-                const normalizedDist = dist / maxDistance;
-                const heatmapIntensity = 1 - normalizedDist;
-                color = `hsl(${240 - heatmapIntensity * 120}, 70%, ${50 + heatmapIntensity * 30}%)`;
-              }
-            }
-            return color;
-          })}
-          sizes={sampledData.map((m: ModelPoint) => sizeScale(m))}
-          selectedModelId={selectedModelId}
-          familyModelIds={new Set([
-            ...(familyTree?.map(m => m.model_id) || []),
-            ...highlightedPath
-          ])}
-          onPointClick={onPointClick}
-          onHover={onHover}
-        />
-      ) : (
-        sampledData.map((model: ModelPoint) => {
-        const isFamilyMember = familyMap.has(model.model_id);
-        const isSelected = selectedModelId === model.model_id;
-        const isInPath = pathSet.has(model.model_id);
-        const distanceFromSelected = distanceMap.get(model.model_id);
-        
-        let finalColor = colorScale(model);
-        if (showDistanceHeatmap && distanceFromSelected !== undefined && selectedModel) {
-          const normalizedDist = distanceFromSelected / maxDistance;
-          const heatmapIntensity = 1 - normalizedDist;
-          finalColor = `hsl(${240 - heatmapIntensity * 120}, 70%, ${50 + heatmapIntensity * 30}%)`;
-        }
-        
-        const [tx, ty, tz] = renderingStyle !== 'embeddings'
-          ? transformLayout(model, renderingStyle, sampledData.indexOf(model), sampledData.length)
-          : [xScale(model.x), yScale(model.y), zScale(model.z)];
-        
-        return (
-          <Point
-            key={model.model_id}
-            position={[tx, ty, tz]}
-            color={finalColor}
-            size={sizeScale(model)}
-            model={model}
-            isSelected={isSelected}
-            isFamilyMember={isFamilyMember}
-            isInPath={isInPath}
-            distanceFromSelected={distanceFromSelected}
-            maxDistance={maxDistance}
-            onClick={() => onPointClick?.(model)}
-            onHover={onHover}
-          />
-        );
-        })
-      )}
-
-      {/* Axes helper */}
-      <axesHelper args={[2]} />
-    </>
-  );
-}, (prevProps, nextProps) => {
-  // Custom comparison to prevent unnecessary re-renders
-  return (
-    prevProps.data.length === nextProps.data.length &&
-    prevProps.colorBy === nextProps.colorBy &&
-    prevProps.sizeBy === nextProps.sizeBy &&
-    prevProps.colorScheme === nextProps.colorScheme &&
-    prevProps.selectedModelId === nextProps.selectedModelId &&
-    prevProps.isInteracting === nextProps.isInteracting &&
-    prevProps.showNetworkEdges === nextProps.showNetworkEdges &&
-    prevProps.showStructuralGroups === nextProps.showStructuralGroups &&
-    prevProps.overviewMode === nextProps.overviewMode &&
-    prevProps.networkEdgeType === nextProps.networkEdgeType &&
-    (prevProps.familyTree?.length || 0) === (nextProps.familyTree?.length || 0)
-  );
-});
-
-// Component to handle WebGL context loss
-function WebGLContextHandler({ onContextLost, onContextRestored }: { 
-  onContextLost: () => void;
-  onContextRestored: () => void;
-}) {
-  const { gl } = useThree();
-  
-  useEffect(() => {
-    const canvas = gl.domElement;
-    
-    const handleContextLost = (event: Event) => {
-      event.preventDefault();
-      console.warn('WebGL context lost. Attempting recovery...');
-      onContextLost();
-    };
-    
-    const handleContextRestored = () => {
-      console.log('WebGL context restored.');
-      onContextRestored();
-    };
-    
-    canvas.addEventListener('webglcontextlost', handleContextLost);
-    canvas.addEventListener('webglcontextrestored', handleContextRestored);
-    
-    return () => {
-      canvas.removeEventListener('webglcontextlost', handleContextLost);
-      canvas.removeEventListener('webglcontextrestored', handleContextRestored);
-    };
-  }, [gl, onContextLost, onContextRestored]);
-  
-  return null;
-}
-
-// Component to track interaction state
-function InteractionTracker({ 
-  controlsRef, 
-  onInteractionChange 
-}: { 
-  controlsRef: React.RefObject<any>;
-  onInteractionChange: (isInteracting: boolean) => void;
-}) {
-  useEffect(() => {
-    if (!controlsRef.current) return;
-    
-    const controls = controlsRef.current;
-    let interactionTimeout: NodeJS.Timeout;
-    
-    const handleStart = () => {
-      onInteractionChange(true);
-      clearTimeout(interactionTimeout);
-    };
-    
-    const handleEnd = () => {
-      interactionTimeout = setTimeout(() => {
-        onInteractionChange(false);
-      }, 100);
-    };
-    
-    // Track interaction events
-    const domElement = controls.domElement;
-    domElement.addEventListener('mousedown', handleStart);
-    domElement.addEventListener('mousemove', handleStart);
-    domElement.addEventListener('wheel', handleStart);
-    domElement.addEventListener('mouseup', handleEnd);
-    domElement.addEventListener('mouseleave', handleEnd);
-    
-    return () => {
-      domElement.removeEventListener('mousedown', handleStart);
-      domElement.removeEventListener('mousemove', handleStart);
-      domElement.removeEventListener('wheel', handleStart);
-      domElement.removeEventListener('mouseup', handleEnd);
-      domElement.removeEventListener('mouseleave', handleEnd);
-      clearTimeout(interactionTimeout);
-    };
-  }, [controlsRef, onInteractionChange]);
-  
-  return null;
-}
-
-export default function ScatterPlot3D({
-  width,
-  height,
-  data,
-  familyTree,
-  colorBy,
-  sizeBy,
-  colorScheme = 'viridis',
-  showLegend = true,
-  showLabels = false,
-  zoomLevel = 1,
-  nodeDensity = 100,
-  renderingStyle = 'embeddings',
-  showNetworkEdges = false,
-  showStructuralGroups = false,
-  overviewMode = false,
-  networkEdgeType = 'combined',
-  onPointClick,
-  selectedModelId,
-  onViewChange,
-  onHover,
-  targetViewCenter,
-  highlightedPath = [],
-  showDistanceHeatmap = false,
+function Points({ 
+  data, 
+  colorBy, 
+  sizeBy, 
+  onPointClick, 
+  onHover
 }: ScatterPlot3DProps) {
-  const cameraRef = useRef<THREE.PerspectiveCamera>(null);
-  const controlsRef = useRef<any>(null);
-  const [isInteracting, setIsInteracting] = useState(false);
-  const [contextLost, setContextLost] = useState(false);
-  const [renderKey, setRenderKey] = useState(0);
-  const previousTargetRef = useRef<{ x: number; y: number; z: number } | null>(null);
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const [hovered, setHovered] = useState<number | null>(null);
+  const { camera, size } = useThree();
+  const [visiblePoints, setVisiblePoints] = useState<ModelPoint[]>(data);
+  const frameCount = useRef(0);
 
-  // Animate camera to target view center when it changes
-  useEffect(() => {
-    if (!targetViewCenter || !controlsRef.current || !cameraRef.current) return;
-    
-    // Check if target has actually changed
-    if (previousTargetRef.current &&
-        previousTargetRef.current.x === targetViewCenter.x &&
-        previousTargetRef.current.y === targetViewCenter.y &&
-        previousTargetRef.current.z === targetViewCenter.z) {
-      return;
+  const colorScale = useMemo(() => {
+    if (colorBy === 'library_name' || colorBy === 'pipeline_tag') {
+      const categories = new Set(data.map((d) => 
+        colorBy === 'library_name' ? (d.library_name || 'unknown') : (d.pipeline_tag || 'unknown')
+      ));
+      const colors = [
+        '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+        '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+      ];
+      const scale = new Map();
+      Array.from(categories).forEach((cat, i) => {
+        scale.set(cat, colors[i % colors.length]);
+      });
+      return scale;
+    } else {
+      return (logVal: number) => {
+        const t = Math.min(Math.max(logVal / 7, 0), 1);
+        if (t < 0.5) {
+          const tt = t * 2;
+          return `rgb(${Math.floor(tt * 255)}, ${Math.floor(tt * 255)}, ${Math.floor((1 - tt) * 255)})`;
+        } else {
+          const tt = (t - 0.5) * 2;
+          return `rgb(${Math.floor(255)}, ${Math.floor((1 - tt) * 255)}, 0)`;
+        }
+      };
     }
+  }, [data, colorBy]);
+
+  const { positions, colors, sizes, models } = useMemo(() => {
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const sizes: number[] = [];
+    const models: ModelPoint[] = [];
+
+    visiblePoints.forEach((model) => {
+      positions.push(model.x, model.y, model.z);
+      
+      const color = getModelColor(model, colorBy, colorScale);
+      const threeColor = new THREE.Color(color);
+      colors.push(threeColor.r, threeColor.g, threeColor.b);
+      
+      const size = getPointSize(model, sizeBy);
+      sizes.push(size);
+      
+      models.push(model);
+    });
+
+    return { positions, colors, sizes, models };
+  }, [visiblePoints, colorBy, sizeBy, colorScale]);
+
+  useEffect(() => {
+    if (!meshRef.current || positions.length === 0) return;
+
+    const tempObject = new THREE.Object3D();
+    const tempColor = new THREE.Color();
+    const count = Math.floor(positions.length / 3);
+
+    for (let i = 0; i < count; i++) {
+      tempObject.position.set(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+      tempObject.scale.setScalar(sizes[i]);
+      tempObject.updateMatrix();
+      meshRef.current.setMatrixAt(i, tempObject.matrix);
+      
+      tempColor.setRGB(colors[i * 3], colors[i * 3 + 1], colors[i * 3 + 2]);
+      meshRef.current.setColorAt(i, tempColor);
+    }
+
+    meshRef.current.count = count;
+    meshRef.current.instanceMatrix.needsUpdate = true;
+    if (meshRef.current.instanceColor) {
+      meshRef.current.instanceColor.needsUpdate = true;
+    }
+  }, [positions, colors, sizes]);
+
+  useEffect(() => {
+    if (!meshRef.current || positions.length === 0) return;
+
+    const tempObject = new THREE.Object3D();
+    const count = Math.floor(positions.length / 3);
     
-    previousTargetRef.current = { ...targetViewCenter };
+    for (let i = 0; i < count; i++) {
+      const scale = i === hovered ? sizes[i] * 2 : sizes[i];
+      tempObject.position.set(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+      tempObject.scale.setScalar(scale);
+      tempObject.updateMatrix();
+      meshRef.current.setMatrixAt(i, tempObject.matrix);
+    }
+
+    meshRef.current.instanceMatrix.needsUpdate = true;
+  }, [hovered, positions, sizes]);
+
+  useFrame(() => {
+    frameCount.current++;
+    if (frameCount.current % 10 !== 0) return;
     
-    // Animate camera to target position
-    const controls = controlsRef.current;
-    const camera = cameraRef.current;
-    
-    // Calculate camera position relative to target
-    // Position camera at optimal viewing distance from the target
-    const distance = 4.5; // Increased distance for better overview
-    const target = new THREE.Vector3(targetViewCenter.x, targetViewCenter.y, targetViewCenter.z);
-    // Use a more natural viewing angle (45 degrees)
-    const angle = Math.PI / 4;
-    const cameraPosition = new THREE.Vector3(
-      target.x + distance * Math.cos(angle),
-      target.y + distance * Math.sin(angle),
-      target.z + distance * Math.cos(angle)
+    const sampled = adaptiveSampleByDistance(
+      data,
+      camera as THREE.Camera,
+      1.0,
+      50
     );
     
-    // Smoothly animate to target
-    const startPosition = camera.position.clone();
-    const startTarget = controls.target.clone();
-    const duration = 1000; // 1 second animation
-    const startTime = Date.now();
-    
-    const animate = () => {
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      
-      // Easing function (ease-in-out)
-      const eased = progress < 0.5
-        ? 2 * progress * progress
-        : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-      
-      // Interpolate camera position
-      camera.position.lerpVectors(startPosition, cameraPosition, eased);
-      controls.target.lerpVectors(startTarget, target, eased);
-      controls.update();
-      
-      if (progress < 1) {
-        requestAnimationFrame(animate);
+    const MAX_RENDER_POINTS = 100000;
+    if (sampled.length > MAX_RENDER_POINTS) {
+      const step = Math.ceil(sampled.length / MAX_RENDER_POINTS);
+      const finalSampled: ModelPoint[] = [];
+      for (let i = 0; i < sampled.length; i += step) {
+        finalSampled.push(sampled[i]);
       }
-    };
-    
-    animate();
-  }, [targetViewCenter]);
-
-  // Update view center when camera changes (throttled for performance)
-  useEffect(() => {
-    if (!cameraRef.current || !onViewChange) return;
-
-    let lastUpdate = 0;
-    const throttleMs = 200; // Update every 200ms instead of 100ms
-
-    const updateViewCenter = () => {
-      const now = Date.now();
-      if (now - lastUpdate < throttleMs) return;
-      lastUpdate = now;
-
-      if (cameraRef.current && controlsRef.current) {
-        // Get the orbit controls target (center of view)
-        const target = controlsRef.current.target;
-        const center = {
-          x: target.x,
-          y: target.y,
-          z: target.z,
-        };
-        onViewChange(center);
-      }
-    };
-
-    // Update on camera changes with throttling (increased throttle for better performance)
-    const interval = setInterval(updateViewCenter, throttleMs * 2); // Double throttle time
-    return () => clearInterval(interval);
-  }, [onViewChange]);
-
-  // Handle WebGL context loss and recovery
-  const handleContextLost = useCallback(() => {
-    setContextLost(true);
-  }, []);
-
-  const handleContextRestored = useCallback(() => {
-    setContextLost(false);
-    // Force re-render by updating key
-    setRenderKey(prev => prev + 1);
-  }, []);
-
-  // Reduce data size if context was lost to prevent further issues
-  // Also preemptively limit very large datasets to prevent context loss
-  const safeData = useMemo(() => {
-    // If context was lost, aggressively reduce to prevent further issues
-    if (contextLost && data.length > 50000) {
-      // Reduce to 50K points if context was lost
-      return data.slice(0, 50000);
+      setVisiblePoints(finalSampled);
+    } else {
+      setVisiblePoints(sampled);
     }
+  });
+
+  const handlePointerMove = useCallback((event: any) => {
+    event.stopPropagation();
+    const instanceId = event.instanceId;
     
-    // Preemptively limit extremely large datasets (>500K) to prevent GPU memory issues
-    // This helps prevent WebGL context loss before it happens
-    if (data.length > 500000) {
-      // Sample down to 300K points for very large datasets
-      const step = Math.ceil(data.length / 300000);
-      const sampled: ModelPoint[] = [];
-      for (let i = 0; i < data.length; i += step) {
-        sampled.push(data[i]);
+    if (instanceId !== undefined && instanceId !== hovered) {
+      setHovered(instanceId);
+      
+      if (onHover && instanceId < models.length) {
+        const model = models[instanceId];
+        const vector = new THREE.Vector3(
+          positions[instanceId * 3],
+          positions[instanceId * 3 + 1],
+          positions[instanceId * 3 + 2]
+        );
+        vector.project(camera as THREE.Camera);
+        
+        const x = (vector.x * 0.5 + 0.5) * size.width;
+        const y = (-vector.y * 0.5 + 0.5) * size.height;
+        
+        onHover(model, { x, y });
       }
-      return sampled;
     }
+  }, [hovered, onHover, models, positions, camera, size]);
+
+  const handlePointerOut = useCallback(() => {
+    setHovered(null);
+    if (onHover) {
+      onHover(null);
+    }
+  }, [onHover]);
+
+  const handleClick = useCallback((event: any) => {
+    event.stopPropagation();
+    const instanceId = event.instanceId;
     
-    return data;
-  }, [data, contextLost]);
+    if (onPointClick && instanceId !== undefined && instanceId < models.length) {
+      onPointClick(models[instanceId]);
+    }
+  }, [onPointClick, models]);
+
+  if (visiblePoints.length === 0) return null;
 
   return (
-    <div style={{ width, height, background: '#ffffff', position: 'relative' }}>
-      {contextLost && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 10,
-            left: 10,
-            right: 10,
-            zIndex: 1000,
-            backgroundColor: '#fff3cd',
-            border: '2px solid #ffc107',
-            borderRadius: '4px',
-            padding: '12px',
-            fontSize: '14px',
-            color: '#856404',
-            fontFamily: "'Instrument Sans', sans-serif",
-            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-          }}
-        >
-          <strong>⚠️ WebGL Context Lost</strong>
-          <div style={{ marginTop: '8px', fontSize: '12px' }}>
-            The 3D visualization encountered a GPU memory issue. The view has been reduced to {safeData.length.toLocaleString()} points to prevent further issues.
-            {data.length > safeData.length && (
-              <div style={{ marginTop: '4px' }}>
-                Showing {safeData.length.toLocaleString()} of {data.length.toLocaleString()} models. Try switching to 2D view or applying filters to reduce the dataset size.
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-      {showLegend && safeData.length > 0 && (
-        <ColorLegend 
-          colorBy={colorBy} 
-          data={safeData} 
-          position="top-right"
-        />
-      )}
+    <instancedMesh
+      ref={meshRef}
+      args={[undefined, undefined, Math.max(100000, data.length)]}
+      frustumCulled={true}
+      onPointerMove={handlePointerMove}
+      onPointerOut={handlePointerOut}
+      onClick={handleClick}
+    >
+      <sphereGeometry args={[1, 8, 8]} />
+      <meshBasicMaterial vertexColors />
+    </instancedMesh>
+  );
+}
+
+export default function ScatterPlot3D(props: ScatterPlot3DProps) {
+  const { data } = props;
+
+  useMemo(() => {
+    if (data.length > 0) {
+      createSpatialIndex(data);
+    }
+  }, [data]);
+
+  const bounds = useMemo(() => {
+    if (data.length === 0) {
+      return { center: [0, 0, 0] as [number, number, number], radius: 10 };
+    }
+
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    let minZ = Infinity, maxZ = -Infinity;
+
+    data.forEach((d) => {
+      minX = Math.min(minX, d.x);
+      maxX = Math.max(maxX, d.x);
+      minY = Math.min(minY, d.y);
+      maxY = Math.max(maxY, d.y);
+      minZ = Math.min(minZ, d.z);
+      maxZ = Math.max(maxZ, d.z);
+    });
+
+    const center: [number, number, number] = [
+      (minX + maxX) / 2,
+      (minY + maxY) / 2,
+      (minZ + maxZ) / 2,
+    ];
+
+    const radius = Math.max(
+      maxX - minX,
+      maxY - minY,
+      maxZ - minZ
+    ) / 2;
+
+    return { center, radius };
+  }, [data]);
+
+  return (
+    <div style={{ width: '100%', height: '100%', background: 'var(--background-color)' }}>
       <Canvas
-        key={renderKey}
-        camera={{ position: [4, 4, 4], fov: 60 }}
         gl={{ 
-          antialias: !isInteracting, 
-          alpha: true,
-          powerPreference: "high-performance",
-          preserveDrawingBuffer: false,
-          failIfMajorPerformanceCaveat: false,
+          antialias: false,
+          powerPreference: 'high-performance',
         }}
-        performance={{ min: isInteracting ? 0.3 : 0.5 }} // Lower performance target when interacting
-        onCreated={({ camera }) => {
-          // Set optimal initial camera position
-          if (safeData.length > 0) {
-            // Calculate center of data
-            let sumX = 0, sumY = 0, sumZ = 0;
-            const sampleSize = Math.min(1000, safeData.length);
-            for (let i = 0; i < sampleSize; i++) {
-              sumX += safeData[i].x;
-              sumY += safeData[i].y;
-              sumZ += safeData[i].z;
-            }
-            const centerX = sumX / sampleSize;
-            const centerY = sumY / sampleSize;
-            const centerZ = sumZ / sampleSize;
-            
-            // Position camera at optimal distance
-            const distance = 5;
-            camera.position.set(centerX + distance, centerY + distance, centerZ + distance);
-            camera.lookAt(centerX, centerY, centerZ);
-          }
-        }}
+        performance={{ min: 0.5 }}
       >
-        <WebGLContextHandler 
-          onContextLost={handleContextLost}
-          onContextRestored={handleContextRestored}
+        <PerspectiveCamera
+          makeDefault
+          position={[
+            bounds.center[0] + bounds.radius * 1.5,
+            bounds.center[1] + bounds.radius * 1.5,
+            bounds.center[2] + bounds.radius * 1.5,
+          ]}
+          fov={60}
+          near={0.1}
+          far={bounds.radius * 10}
         />
-        <PerspectiveCamera makeDefault ref={cameraRef} position={[4, 4, 4]} fov={60} />
+        
         <OrbitControls
-          ref={controlsRef}
-          enablePan={true}
-          enableZoom={true}
-          enableRotate={true}
-          minDistance={0.5 / zoomLevel}
-          maxDistance={(overviewMode ? 20 : 15) * zoomLevel}
-          enableDamping={true}
+          target={bounds.center}
+          enableDamping
           dampingFactor={0.05}
-          zoomSpeed={1.2 * zoomLevel}
-          panSpeed={0.8}
-          rotateSpeed={0.8}
+          minDistance={bounds.radius * 0.5}
+          maxDistance={bounds.radius * 5}
         />
-        <InteractionTracker controlsRef={controlsRef} onInteractionChange={setIsInteracting} />
-        <SceneContent
-          data={safeData}
-          familyTree={familyTree}
-          colorBy={colorBy}
-          sizeBy={sizeBy}
-          colorScheme={colorScheme}
-          showLabels={showLabels}
-          nodeDensity={nodeDensity}
-          renderingStyle={renderingStyle}
-          showNetworkEdges={showNetworkEdges}
-          showStructuralGroups={showStructuralGroups}
-          overviewMode={overviewMode}
-          networkEdgeType={networkEdgeType}
-          onPointClick={onPointClick}
-          selectedModelId={selectedModelId}
-          onHover={onHover}
-          isInteracting={isInteracting}
-          highlightedPath={highlightedPath}
-          showDistanceHeatmap={showDistanceHeatmap}
+
+        <ambientLight intensity={0.8} />
+        <directionalLight position={[10, 10, 5]} intensity={0.5} />
+
+        <Points {...props} />
+
+        <gridHelper
+          args={[bounds.radius * 4, 20]}
+          position={[bounds.center[0], bounds.center[1] - bounds.radius, bounds.center[2]]}
         />
       </Canvas>
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 10,
-          left: 10,
-          fontSize: '11px',
-          color: '#6a6a6a',
-          backgroundColor: 'rgba(255, 255, 255, 0.9)',
-          padding: '4px 8px',
-          borderRadius: '2px',
-          border: '1px solid #d0d0d0',
-          fontFamily: "'Instrument Sans', sans-serif",
-        }}
-      >
-        <strong>3D Navigation:</strong> Click + drag to rotate | Scroll to zoom | Right-click + drag to pan
-      </div>
-      {(overviewMode || showNetworkEdges || showStructuralGroups) && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 10,
-            right: 10,
-            fontSize: '11px',
-            color: '#2c5f2d',
-            backgroundColor: 'rgba(240, 248, 240, 0.95)',
-            padding: '6px 10px',
-            borderRadius: '4px',
-            border: '1px solid #90ee90',
-            fontFamily: "'Instrument Sans', sans-serif",
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '4px',
-          }}
-        >
-          {overviewMode && (
-            <div style={{ fontWeight: '600' }}>🔍 Overview Mode Active</div>
-          )}
-          {showNetworkEdges && (
-            <div style={{ fontSize: '10px' }}>
-              Network: {networkEdgeType === 'combined' ? 'Library + Pipeline' : networkEdgeType}
-            </div>
-          )}
-          {showStructuralGroups && (
-            <div style={{ fontSize: '10px' }}>Structural Groups: Library & Pipeline clusters</div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
-

@@ -29,6 +29,8 @@ from core.config import settings
 from core.exceptions import DataNotLoadedError, EmbeddingsNotReadyError
 from models.schemas import ModelPoint
 from utils.family_tree import calculate_family_depths
+from utils.cache import cache, cached_response
+from utils.response_encoder import FastJSONResponse, MessagePackResponse, encode_models_msgpack
 import api.dependencies as deps
 from api.routes import models, stats, clusters
 
@@ -103,10 +105,79 @@ app.include_router(clusters.router)
 
 @app.on_event("startup")
 async def startup_event():
-    # All variables are accessed via deps module, no need for global declarations
+    """
+    Fast startup using pre-computed data.
+    Falls back to traditional loading if pre-computed data not available.
+    """
+    import time
+    startup_start = time.time()
     
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     root_dir = os.path.dirname(backend_dir)
+    
+    # Try to load pre-computed data first (instant startup!)
+    from utils.precomputed_loader import get_precomputed_loader
+    
+    precomputed_loader = get_precomputed_loader(version="v1")
+    
+    if precomputed_loader:
+        logger.info("=" * 60)
+        logger.info("LOADING PRE-COMPUTED DATA (Fast Startup Mode)")
+        logger.info("=" * 60)
+        
+        try:
+            # Load everything in seconds
+            deps.df, deps.embeddings, metadata = precomputed_loader.load_all()
+            
+            # Extract 3D coordinates from dataframe
+            deps.reduced_embeddings = np.column_stack([
+                deps.df['x_3d'].values,
+                deps.df['y_3d'].values,
+                deps.df['z_3d'].values
+            ])
+            
+            # Initialize embedder (without loading/generating embeddings)
+            deps.embedder = ModelEmbedder()
+            
+            # Initialize reducer (already fitted)
+            deps.reducer = DimensionReducer(method="umap", n_components=3)
+            
+            # No graph embeddings in fast mode (optional feature)
+            deps.graph_embedder = None
+            deps.graph_embeddings_dict = None
+            deps.combined_embeddings = None
+            deps.reduced_embeddings_graph = None
+            
+            startup_time = time.time() - startup_start
+            logger.info("=" * 60)
+            logger.info(f"STARTUP COMPLETE in {startup_time:.2f} seconds!")
+            logger.info(f"Loaded {len(deps.df):,} models with pre-computed coordinates")
+            logger.info(f"Unique libraries: {metadata.get('unique_libraries')}")
+            logger.info(f"Unique pipelines: {metadata.get('unique_pipelines')}")
+            logger.info("=" * 60)
+            
+            # Update module-level aliases
+            df = deps.df
+            embedder = deps.embedder
+            reducer = deps.reducer
+            embeddings = deps.embeddings
+            reduced_embeddings = deps.reduced_embeddings
+            
+            return
+        
+        except Exception as e:
+            logger.warning(f"Failed to load pre-computed data: {e}")
+            logger.info("Falling back to traditional loading...")
+    
+    else:
+        logger.info("=" * 60)
+        logger.info("Pre-computed data not found.")
+        logger.info("To enable fast startup, run:")
+        logger.info("  cd backend && python scripts/precompute_data.py --sample-size 150000")
+        logger.info("=" * 60)
+        logger.info("Falling back to traditional loading (may take 1-8 hours)...")
+    
+    # Traditional loading (slow path)
     cache_dir = os.path.join(root_dir, "cache")
     os.makedirs(cache_dir, exist_ok=True)
     
@@ -118,13 +189,11 @@ async def startup_event():
     reducer_cache_umap = os.path.join(cache_dir, "reducer_umap_3d.pkl")
     reducer_cache_umap_graph = os.path.join(cache_dir, "reducer_umap_3d_graph.pkl")
     
-    sample_size = settings.get_sample_size()
-    if sample_size:
-        logger.info(f"Loading limited dataset: {sample_size} models (SAMPLE_SIZE={sample_size})")
-    else:
-        logger.info("No SAMPLE_SIZE set, loading full dataset")
+    # Load dataset with sample (for reasonable startup time)
+    sample_size = settings.SAMPLE_SIZE or settings.get_sample_size() or 5000
+    logger.info(f"Loading dataset (sample_size={sample_size}, prioritizing base models)...")
     
-    deps.df = deps.data_loader.load_data(sample_size=sample_size)
+    deps.df = deps.data_loader.load_data(sample_size=sample_size, prioritize_base_models=True)
     deps.df = deps.data_loader.preprocess_for_embedding(deps.df)
     
     if 'model_id' in deps.df.columns:
@@ -148,57 +217,16 @@ async def startup_event():
         deps.embeddings = deps.embedder.generate_embeddings(texts, batch_size=128)
         deps.embedder.save_embeddings(deps.embeddings, embeddings_cache)
     
-    # Initialize graph embedder and generate graph embeddings (optional, lazy-loaded)
-    if settings.USE_GRAPH_EMBEDDINGS:
-        try:
-            deps.graph_embedder = GraphEmbedder()
-            logger.info("Building family graph for graph embeddings...")
-            graph = deps.graph_embedder.build_family_graph(deps.df)
-            
-            if os.path.exists(graph_embeddings_cache):
-                try:
-                    deps.graph_embeddings_dict = deps.graph_embedder.load_embeddings(graph_embeddings_cache)
-                    logger.info(f"Loaded cached graph embeddings for {len(deps.graph_embeddings_dict)} models")
-                except (IOError, pickle.UnpicklingError, EOFError) as e:
-                    logger.warning(f"Failed to load cached graph embeddings: {e}")
-                    deps.graph_embeddings_dict = None
-            
-            if deps.graph_embeddings_dict is None or len(deps.graph_embeddings_dict) == 0:
-                logger.info("Generating graph embeddings (this may take a while)...")
-                deps.graph_embeddings_dict = deps.graph_embedder.generate_graph_embeddings(graph, workers=4)
-                if deps.graph_embeddings_dict:
-                    deps.graph_embedder.save_embeddings(deps.graph_embeddings_dict, graph_embeddings_cache)
-                    logger.info(f"Generated graph embeddings for {len(deps.graph_embeddings_dict)} models")
-            
-            # Combine text and graph embeddings
-            if deps.graph_embeddings_dict and len(deps.graph_embeddings_dict) > 0:
-                model_ids = deps.df['model_id'].astype(str).tolist()
-                if os.path.exists(combined_embeddings_cache):
-                    try:
-                        with open(combined_embeddings_cache, 'rb') as f:
-                            deps.combined_embeddings = pickle.load(f)
-                        logger.info("Loaded cached combined embeddings")
-                    except (IOError, pickle.UnpicklingError, EOFError) as e:
-                        logger.warning(f"Failed to load cached combined embeddings: {e}")
-                        deps.combined_embeddings = None
-                
-                if deps.combined_embeddings is None:
-                    logger.info("Combining text and graph embeddings...")
-                    deps.combined_embeddings = deps.graph_embedder.combine_embeddings(
-                        deps.embeddings, deps.graph_embeddings_dict, model_ids,
-                        text_weight=0.7, graph_weight=0.3
-                    )
-                    with open(combined_embeddings_cache, 'wb') as f:
-                        pickle.dump(deps.combined_embeddings, f)
-                    logger.info("Combined embeddings saved")
-        except Exception as e:
-            logger.warning(f"Graph embeddings not available: {e}. Continuing with text-only embeddings.")
-            deps.graph_embedder = None
-            deps.graph_embeddings_dict = None
-            deps.combined_embeddings = None
+    # Skip graph embeddings in fallback mode (too slow)
+    deps.graph_embedder = None
+    deps.graph_embeddings_dict = None
+    deps.combined_embeddings = None
     
     # Initialize reducer for text embeddings
     deps.reducer = DimensionReducer(method="umap", n_components=3)
+    
+    # Pre-compute clusters for faster requests
+    logger.info("Pre-computing clusters...")
     
     if os.path.exists(reduced_cache_umap) and os.path.exists(reducer_cache_umap):
         try:
@@ -225,35 +253,19 @@ async def startup_event():
             pickle.dump(deps.reduced_embeddings, f)
         deps.reducer.save_reducer(reducer_cache_umap)
     
-    # Initialize reducer for graph-aware embeddings if available
-    if deps.combined_embeddings is not None:
-        reducer_graph = DimensionReducer(method="umap", n_components=3)
-        
-        if os.path.exists(reduced_cache_umap_graph) and os.path.exists(reducer_cache_umap_graph):
-            try:
-                with open(reduced_cache_umap_graph, 'rb') as f:
-                    deps.reduced_embeddings_graph = pickle.load(f)
-                reducer_graph.load_reducer(reducer_cache_umap_graph)
-            except (IOError, pickle.UnpicklingError, EOFError) as e:
-                logger.warning(f"Failed to load cached graph-aware reduced embeddings: {e}")
-                deps.reduced_embeddings_graph = None
-        
-        if deps.reduced_embeddings_graph is None:
-            reducer_graph.reducer = UMAP(
-                n_components=3,
-                n_neighbors=30,
-                min_dist=0.3,
-                metric='cosine',
-                random_state=42,
-                n_jobs=-1,
-                low_memory=True,
-                spread=1.5
-            )
-            deps.reduced_embeddings_graph = reducer_graph.fit_transform(deps.combined_embeddings)
-            with open(reduced_cache_umap_graph, 'wb') as f:
-                pickle.dump(deps.reduced_embeddings_graph, f)
-            reducer_graph.save_reducer(reducer_cache_umap_graph)
-            logger.info("Graph-aware embeddings reduced and cached")
+    # No graph embeddings in fallback mode
+    deps.reduced_embeddings_graph = None
+    
+    # Pre-compute clusters now instead of on first request
+    if deps.reduced_embeddings is not None and len(deps.reduced_embeddings) > 0:
+        models.cluster_labels = compute_clusters(
+            deps.reduced_embeddings, 
+            n_clusters=min(50, len(deps.reduced_embeddings) // 100)
+        )
+        logger.info(f"Pre-computed {len(set(models.cluster_labels))} clusters")
+    
+    startup_time = time.time() - startup_start
+    logger.info(f"Startup complete in {startup_time:.2f} seconds")
     
     # Update module-level aliases
     df = deps.df
@@ -293,11 +305,12 @@ async def get_models(
     search_query: Optional[str] = Query(None),
     color_by: str = Query("library_name"),
     size_by: str = Query("downloads"),
-    max_points: Optional[int] = Query(None),
+    max_points: Optional[int] = Query(10000),  # REDUCED from None (was 50k default in frontend)
     projection_method: str = Query("umap"),
     base_models_only: bool = Query(False),
     max_hierarchy_depth: Optional[int] = Query(None, ge=0, description="Filter to models at or below this hierarchy depth."),
-    use_graph_embeddings: bool = Query(False, description="Use graph-aware embeddings that respect family tree structure")
+    use_graph_embeddings: bool = Query(False, description="Use graph-aware embeddings that respect family tree structure"),
+    format: str = Query("json", regex="^(json|msgpack)$", description="Response format: json or msgpack")
 ):
     if deps.df is None:
         raise DataNotLoadedError()
@@ -505,12 +518,38 @@ async def get_models(
     ]
     
     # Return models with metadata about embedding type
-    return {
+    response_data = {
         "models": models,
         "embedding_type": embedding_type,
         "filtered_count": filtered_count,
         "returned_count": len(models)
     }
+    
+    # Return in requested format with caching headers
+    if format == "msgpack":
+        try:
+            binary_data = encode_models_msgpack([m.dict() for m in models])
+            return Response(
+                content=binary_data,
+                media_type="application/msgpack",
+                headers={
+                    "Cache-Control": "public, max-age=300",
+                    "X-Content-Type-Options": "nosniff",
+                    "Access-Control-Expose-Headers": "Cache-Control"
+                }
+            )
+        except Exception as e:
+            logger.warning(f"MessagePack encoding failed, falling back to JSON: {e}")
+    
+    # Return JSON with caching headers
+    return FastJSONResponse(
+        content=response_data,
+        headers={
+            "Cache-Control": "public, max-age=300",
+            "X-Content-Type-Options": "nosniff",
+            "Access-Control-Expose-Headers": "Cache-Control"
+        }
+    )
 
 
 @app.get("/api/stats")
@@ -1546,7 +1585,7 @@ async def get_current_model_count(
                 try:
                     from utils.data_loader import ModelDataLoader
                     data_loader = ModelDataLoader()
-                    df = data_loader.load_data(sample_size=10000)
+                    df = data_loader.load_data(sample_size=10000, prioritize_base_models=True)
                     library_counts = {}
                     pipeline_counts = {}
                     

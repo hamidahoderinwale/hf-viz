@@ -281,24 +281,24 @@ export default function FileTree({ modelId }: FileTreeProps) {
 
   const getFileIcon = (node: FileNode): string => {
     if (node.type === 'directory') {
-      return expandedPaths.has(node.path) ? '📂' : '📁';
+      return expandedPaths.has(node.path) ? '▼' : '▶';
     }
     const ext = node.path.split('.').pop()?.toLowerCase();
     const iconMap: Record<string, string> = {
-      'py': '🐍',
-      'json': '📄',
-      'txt': '📝',
-      'md': '📖',
-      'yml': '⚙️',
-      'yaml': '⚙️',
-      'bin': '💾',
-      'safetensors': '🔒',
-      'pt': '🔥',
-      'pth': '🔥',
-      'onnx': '🧠',
-      'pb': '🧠',
+      'py': 'py',
+      'json': 'json',
+      'txt': 'txt',
+      'md': 'md',
+      'yml': 'yml',
+      'yaml': 'yaml',
+      'bin': 'bin',
+      'safetensors': 'st',
+      'pt': 'pt',
+      'pth': 'pth',
+      'onnx': 'onnx',
+      'pb': 'pb',
     };
-    return iconMap[ext || ''] || '📄';
+    return iconMap[ext || ''] || '•';
   };
 
   const copyFilePath = (path: string) => {
@@ -348,7 +348,7 @@ export default function FileTree({ modelId }: FileTreeProps) {
                 title="Copy file path"
                 aria-label="Copy path"
               >
-                📋
+                Copy
               </button>
               <a
                 href={getFileUrl(node.path)}
@@ -359,7 +359,7 @@ export default function FileTree({ modelId }: FileTreeProps) {
                 aria-label="Download"
                 onClick={(e) => e.stopPropagation()}
               >
-                ⬇️
+                Download
               </a>
             </div>
           )}

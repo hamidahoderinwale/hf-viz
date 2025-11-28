@@ -1,30 +1,31 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 // Visualizations
-import EnhancedScatterPlot from './components/visualizations/EnhancedScatterPlot';
+import ScatterPlot from './components/visualizations/ScatterPlot';
+import ScatterPlot3D from './components/visualizations/ScatterPlot3D';
 import NetworkGraph from './components/visualizations/NetworkGraph';
-import UVProjectionSquare from './components/visualizations/UVProjectionSquare';
 import DistributionView from './components/visualizations/DistributionView';
-import StackedView from './components/visualizations/StackedView';
-import HeatmapView from './components/visualizations/HeatmapView';
 // Controls
 import RandomModelButton from './components/controls/RandomModelButton';
 import ZoomSlider from './components/controls/ZoomSlider';
 import ThemeToggle from './components/controls/ThemeToggle';
-import RenderingStyleSelector from './components/controls/RenderingStyleSelector';
-import VisualizationModeButtons from './components/controls/VisualizationModeButtons';
-import ClusterFilter, { Cluster } from './components/controls/ClusterFilter';
+// import RenderingStyleSelector from './components/controls/RenderingStyleSelector';
+// import VisualizationModeButtons from './components/controls/VisualizationModeButtons';
+// import ClusterFilter from './components/controls/ClusterFilter';
+import type { Cluster } from './components/controls/ClusterFilter';
 import NodeDensitySlider from './components/controls/NodeDensitySlider';
 // Modals
 import ModelModal from './components/modals/ModelModal';
 // UI Components
 import LiveModelCount from './components/ui/LiveModelCount';
-import ModelTooltip from './components/ui/ModelTooltip';
+// import ModelTooltip from './components/ui/ModelTooltip';
 import ErrorBoundary from './components/ui/ErrorBoundary';
+import VirtualSearchResults from './components/ui/VirtualSearchResults';
 // Types & Utils
 import { ModelPoint, Stats, FamilyTree, SearchResult, SimilarModel } from './types';
 import cache, { IndexedDBCache } from './utils/data/indexedDB';
 import { debounce } from './utils/debounce';
 import requestManager from './utils/api/requestManager';
+import { fetchWithMsgPack, decodeModelsMsgPack } from './utils/api/msgpackDecoder';
 import { useFilterStore, ViewMode, ColorByOption, SizeByOption } from './stores/filterStore';
 import { API_BASE } from './config/api';
 import './App.css';
@@ -37,8 +38,6 @@ const logger = {
   },
 };
 
-const ScatterPlot3D = lazy(() => import('./components/visualizations/ScatterPlot3D'));
-
 function App() {
   // Filter store state
   const {
@@ -48,8 +47,8 @@ function App() {
     colorScheme,
     showLabels,
     zoomLevel,
-    nodeDensity,
-    renderingStyle,
+    // nodeDensity,
+    // renderingStyle,
     theme,
     selectedClusters,
     searchQuery,
@@ -61,9 +60,9 @@ function App() {
     setColorScheme,
     setShowLabels,
     setZoomLevel,
-    setNodeDensity,
-    setRenderingStyle,
-    setSelectedClusters,
+    // setNodeDensity,
+    // setRenderingStyle,
+    // setSelectedClusters,
     setSearchQuery,
     setMinDownloads,
     setMinLikes,
@@ -93,7 +92,7 @@ function App() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchInput, setSearchInput] = useState('');
   const [showSearchResults, setShowSearchResults] = useState(false);
-  const [viewCenter, setViewCenter] = useState<{ x: number; y: number; z: number } | null>(null);
+  // const [viewCenter, setViewCenter] = useState<{ x: number; y: number; z: number } | null>(null);
   const [projectionMethod, setProjectionMethod] = useState<'umap' | 'tsne'>('umap');
   const [bookmarkedModels, setBookmarkedModels] = useState<string[]>([]);
   const [comparisonModels, setComparisonModels] = useState<ModelPoint[]>([]);
@@ -178,11 +177,19 @@ function App() {
           projection_method: projectionMethod,
         });
         const url = `${API_BASE}/api/models/semantic-similarity?${params}`;
-        const response = await requestManager.fetch(url, {}, cacheKey);
-        if (!response.ok) throw new Error('Failed to fetch similar models');
-        const result = await response.json();
-        models = result.models || [];
-        count = models.length;
+        // Try MessagePack first, fallback to JSON
+        try {
+          const result = await fetchWithMsgPack<{ models: ModelPoint[] }>(url);
+          models = result.models || [];
+          count = models.length;
+        } catch (msgpackError) {
+          // Fallback to JSON
+          const response = await requestManager.fetch(url, {}, cacheKey);
+          if (!response.ok) throw new Error('Failed to fetch similar models');
+          const result = await response.json();
+          models = result.models || [];
+          count = models.length;
+        }
       } else {
         const params = new URLSearchParams({
           min_downloads: minDownloads.toString(),
@@ -197,21 +204,57 @@ function App() {
           params.append('search_query', searchQuery);
         }
         
-        params.append('max_points', '500000');
+        params.append('max_points', viewMode === '3d' ? '50000' : viewMode === 'scatter' ? '10000' : viewMode === 'network' ? '500' : '5000');
+        // Add format parameter for MessagePack support
+        params.append('format', 'msgpack');
 
         const url = `${API_BASE}/api/models?${params}`;
-        const response = await requestManager.fetch(url, {}, cacheKey);
-        if (!response.ok) throw new Error('Failed to fetch models');
-        const result = await response.json();
-        
-        if (Array.isArray(result)) {
-          models = result;
-          count = models.length;
-          setEmbeddingType('text-only');
-        } else {
-          models = result.models || [];
-          count = result.filtered_count ?? models.length;
-          setEmbeddingType(result.embedding_type || 'text-only');
+        // Try MessagePack first for better performance, fallback to JSON
+        try {
+          const response = await requestManager.fetch(url, {
+            headers: {
+              'Accept': 'application/msgpack',
+            },
+          }, cacheKey);
+          
+          if (!response.ok) throw new Error('Failed to fetch models');
+          
+          const contentType = response.headers.get('content-type');
+          if (contentType?.includes('application/msgpack')) {
+            // Decode MessagePack binary response (backend returns compact format array)
+            const buffer = await response.arrayBuffer();
+            models = decodeModelsMsgPack(new Uint8Array(buffer));
+            count = models.length;
+            setEmbeddingType('text-only'); // MessagePack response doesn't include metadata
+          } else {
+            // Response was JSON (backend may not support msgpack or returned JSON)
+            const result = await response.json();
+            if (Array.isArray(result)) {
+              models = result;
+              count = models.length;
+              setEmbeddingType('text-only');
+            } else {
+              models = result.models || [];
+              count = result.filtered_count ?? models.length;
+              setEmbeddingType(result.embedding_type || 'text-only');
+            }
+          }
+        } catch (error) {
+          // Fallback to JSON if MessagePack fails
+          const jsonUrl = url.replace('format=msgpack', 'format=json');
+          const response = await requestManager.fetch(jsonUrl, {}, cacheKey);
+          if (!response.ok) throw new Error('Failed to fetch models');
+          const result = await response.json();
+          
+          if (Array.isArray(result)) {
+            models = result;
+            count = models.length;
+            setEmbeddingType('text-only');
+          } else {
+            models = result.models || [];
+            count = result.filtered_count ?? models.length;
+            setEmbeddingType(result.embedding_type || 'text-only');
+          }
         }
       }
       
@@ -233,7 +276,7 @@ function App() {
       setLoading(false);
       fetchDataAbortRef.current = null;
     }
-  }, [minDownloads, minLikes, searchQuery, colorBy, sizeBy, projectionMethod, baseModelsOnly, semanticSimilarityMode, semanticQueryModel, useGraphEmbeddings, selectedClusters]);
+  }, [minDownloads, minLikes, searchQuery, colorBy, sizeBy, projectionMethod, baseModelsOnly, semanticSimilarityMode, semanticQueryModel, useGraphEmbeddings, selectedClusters, viewMode]);
 
   const debouncedFetchData = useMemo(
     () => debounce(fetchData, 300),
@@ -258,15 +301,43 @@ function App() {
     };
   }, [minDownloads, minLikes, colorBy, sizeBy, baseModelsOnly, projectionMethod, semanticSimilarityMode, semanticQueryModel, useGraphEmbeddings, debouncedFetchData]);
 
+  // Function to clear cache and refresh stats
+  const clearCacheAndRefresh = useCallback(async () => {
+    try {
+      // Clear all caches
+      await cache.clear('stats');
+      await cache.clear('models');
+      console.log('Cache cleared successfully');
+      
+      // Immediately fetch fresh stats
+      const response = await fetch(`${API_BASE}/api/stats`);
+      if (!response.ok) throw new Error('Failed to fetch stats');
+      const statsData = await response.json();
+      await cache.cacheStats('stats', statsData);
+      setStats(statsData);
+      
+      // Refresh model data
+      fetchData();
+    } catch (err) {
+      if (err instanceof Error) {
+        logger.error('Error clearing cache:', err);
+      }
+    }
+  }, [fetchData]);
+
   useEffect(() => {
     const fetchStats = async () => {
       const cacheKey = 'stats';
       const cachedStats = await cache.getCachedStats(cacheKey);
+      
+      // Always fetch fresh stats on initial load, ignore stale cache
+      // This fixes the issue of showing old data (1000 models) when backend has 5000
       if (cachedStats) {
+        // Show cached data temporarily
         setStats(cachedStats);
-        return;
       }
-
+      
+      // Always fetch fresh stats to update
       try {
         const response = await fetch(`${API_BASE}/api/stats`);
         if (!response.ok) throw new Error('Failed to fetch stats');
@@ -451,50 +522,54 @@ function App() {
     <ErrorBoundary>
       <div className="App">
       <header className="App-header">
-        <h1>Anatomy of a Machine Learning Ecosystem: 2 Million Models on Hugging Face</h1>
-        <p style={{ maxWidth: '900px', margin: '0 auto', lineHeight: '1.6' }}>
-          Many have observed that the development and deployment of generative machine learning (ML) and artificial intelligence (AI) models follow a distinctive pattern in which pre-trained models are adapted and fine-tuned for specific downstream tasks. However, there is limited empirical work that examines the structure of these interactions. This paper analyzes 1.86 million models on Hugging Face, a leading peer production platform for model development. Our study of model family trees reveals sprawling fine-tuning lineages that vary widely in size and structure. Using an evolutionary biology lens, we measure genetic similarity and mutation of traits over model families.
-          {' '}
-          <a 
-            href="https://arxiv.org/abs/2508.06811" 
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: 'white', textDecoration: 'underline', fontWeight: '500' }}
-          >
-            Read the full paper
-          </a>
-        </p>
-        <p style={{ marginTop: '1rem', fontSize: '0.9rem', opacity: 0.9, lineHeight: '1.6' }}>
-          <strong>Resources:</strong>{' '}
-          <a 
-            href="https://github.com/bendlaufer/ai-ecosystem" 
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: '#64b5f6', textDecoration: 'underline', marginRight: '1rem' }}
-          >
-            GitHub Repository
-          </a>
-          <a 
-            href="https://huggingface.co/modelbiome" 
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: '#64b5f6', textDecoration: 'underline' }}
-          >
-            Hugging Face Dataset
-          </a>
-        </p>
-        <p style={{ marginTop: '0.5rem', fontSize: '0.9rem', opacity: 0.9 }}>
-          <strong>Authors:</strong> Benjamin Laufer, Hamidah Oderinwale, Jon Kleinberg
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center', width: '100%' }}>
-          <LiveModelCount compact={true} />
-          {stats && (
-            <div className="stats">
-              <span>Dataset Models: {stats.total_models.toLocaleString()}</span>
-              <span>Libraries: {stats.unique_libraries}</span>
-              <span>Task Types: {stats.unique_task_types ?? stats.unique_pipelines}</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', width: '100%' }}>
+          <div style={{ flex: '1 1 auto', minWidth: '250px' }}>
+            <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: '600', lineHeight: '1.2' }}>ML Ecosystem: 2M Models on Hugging Face</h1>
+            <div style={{ marginTop: '0.5rem', fontSize: '0.85rem', opacity: 0.9, display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <a href="https://arxiv.org/abs/2508.06811" target="_blank" rel="noopener noreferrer" style={{ color: '#64b5f6', textDecoration: 'none', whiteSpace: 'nowrap' }}>Paper</a>
+              <a href="https://github.com/bendlaufer/ai-ecosystem" target="_blank" rel="noopener noreferrer" style={{ color: '#64b5f6', textDecoration: 'none', whiteSpace: 'nowrap' }}>GitHub</a>
+              <a href="https://huggingface.co/modelbiome" target="_blank" rel="noopener noreferrer" style={{ color: '#64b5f6', textDecoration: 'none', whiteSpace: 'nowrap' }}>Dataset</a>
+              <span style={{ opacity: 0.7, whiteSpace: 'nowrap' }}>Laufer, Oderinwale, Kleinberg</span>
             </div>
-          )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', flexShrink: 0 }}>
+            <LiveModelCount compact={true} />
+            {stats && (
+              <>
+                <div className="stats" style={{ display: 'flex', gap: '0.5rem', fontSize: '0.8rem', flexWrap: 'wrap' }}>
+                  <span>{stats.total_models.toLocaleString()} models</span>
+                  <span>{stats.unique_libraries} libraries</span>
+                </div>
+                <button
+                  onClick={clearCacheAndRefresh}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.15)',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    borderRadius: '0',
+                    width: '32px',
+                    height: '32px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '16px',
+                    transition: 'all 0.2s ease',
+                    flexShrink: 0,
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+                  }}
+                  title="Refresh data and clear cache"
+                  aria-label="Refresh data"
+                >
+                  ⟳
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
@@ -522,7 +597,7 @@ function App() {
                 background: '#4a4a4a',
                 color: 'white', 
                 padding: '0.35rem 0.7rem', 
-                borderRadius: '12px',
+                borderRadius: '0',
                 fontWeight: '600'
               }}>
                 {activeFilterCount} active
@@ -553,7 +628,7 @@ function App() {
                     background: '#4a4a4a',
                     color: 'white', 
                     padding: '0.3rem 0.6rem', 
-                    borderRadius: '12px',
+                    borderRadius: '0',
                     fontWeight: '600'
                   }}>
                     Graph
@@ -575,17 +650,15 @@ function App() {
 
           {/* Search Section */}
           <div className="sidebar-section">
-            <h3>Search Models</h3>
+            <h3>Search</h3>
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by model ID, tags, or keywords..."
+              placeholder="Search models, tags, libraries..."
               style={{ width: '100%' }}
+              title="Search by model name, tags, library, or metadata"
             />
-            <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.5rem', lineHeight: '1.4' }}>
-              Search by model name, tags, library, or metadata
-            </div>
           </div>
 
           {/* Popularity Filters */}
@@ -639,24 +712,26 @@ function App() {
             </label>
           </div>
 
-          {/* License Filter */}
+          {/* License Filter - Collapsed */}
           {stats && stats.licenses && typeof stats.licenses === 'object' && Object.keys(stats.licenses).length > 0 && (
-            <div className="sidebar-section">
-              <h3>License Filter</h3>
-              <div style={{ maxHeight: '200px', overflowY: 'auto', marginTop: '0.5rem' }}>
+            <details className="sidebar-section" style={{ border: '1px solid #e0e0e0', borderRadius: '0', padding: '0.75rem' }}>
+              <summary style={{ cursor: 'pointer', fontWeight: '600', fontSize: '0.95rem', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span>Licenses ({Object.keys(stats.licenses).length})</span>
+              </summary>
+              <div style={{ maxHeight: '200px', overflowY: 'auto', marginTop: '1rem' }}>
                 {Object.entries(stats.licenses as Record<string, number>)
-                  .sort((a, b) => b[1] - a[1])  // Sort by count descending
-                  .slice(0, 20)  // Show top 20 licenses
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 20)
                   .map(([license, count]) => (
                     <label 
                       key={license}
                       style={{ 
                         display: 'flex', 
                         alignItems: 'center', 
-                        gap: '0.5rem', 
-                        marginBottom: '0.5rem',
+                        gap: '0.4rem', 
+                        marginBottom: '0.4rem',
                         cursor: 'pointer',
-                        fontSize: '0.9rem'
+                        fontSize: '0.85rem'
                       }}
                     >
                       <input
@@ -664,80 +739,96 @@ function App() {
                         checked={searchQuery.toLowerCase().includes(license.toLowerCase())}
                         onChange={(e) => {
                           if (e.target.checked) {
-                            // Add license to search (simple implementation)
                             setSearchQuery(searchQuery ? `${searchQuery} ${license}` : license);
                           } else {
-                            // Remove license from search
                             setSearchQuery(searchQuery.replace(license, '').trim() || '');
                           }
                         }}
                       />
                       <span style={{ flex: 1 }}>{license || 'Unknown'}</span>
-                      <span style={{ fontSize: '0.75rem', color: '#666' }}>({Number(count).toLocaleString()})</span>
+                      <span style={{ fontSize: '0.7rem', color: '#999' }}>({Number(count).toLocaleString()})</span>
                     </label>
                   ))}
               </div>
-              {Object.keys(stats.licenses).length > 20 && (
-                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.5rem' }}>
-                  Showing top 20 licenses
-                </div>
-              )}
-            </div>
+            </details>
           )}
 
-          {/* Discovery */}
+          {/* Quick Actions - Consolidated */}
           <div className="sidebar-section">
-            <h3>Discovery</h3>
-            <RandomModelButton
-              data={data}
-              onSelect={(model: ModelPoint) => {
-                setSelectedModel(model);
-                setIsModalOpen(true);
-              }}
-              disabled={loading || data.length === 0}
-            />
+            <h3>Quick Actions</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <RandomModelButton
+                data={data}
+                onSelect={(model: ModelPoint) => {
+                  setSelectedModel(model);
+                  setIsModalOpen(true);
+                }}
+                disabled={loading || data.length === 0}
+              />
+              <button
+                onClick={() => {
+                  const avgDownloads = data.reduce((sum, m) => sum + (m.downloads || 0), 0) / data.length;
+                  setMinDownloads(Math.floor(avgDownloads));
+                }}
+                disabled={loading || data.length === 0}
+                style={{
+                  padding: '0.75rem',
+                  background: '#4a90e2',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '0',
+                  cursor: loading || data.length === 0 ? 'not-allowed' : 'pointer',
+                  fontWeight: '500',
+                  fontSize: '0.9rem',
+                  opacity: loading || data.length === 0 ? 0.5 : 1
+                }}
+                title="Filter to models with above average downloads"
+              >
+                Popular Models
+              </button>
+              <button
+                onClick={resetFilters}
+                style={{
+                  padding: '0.75rem',
+                  background: '#6c757d',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '0',
+                  cursor: 'pointer',
+                  fontWeight: '500',
+                  fontSize: '0.9rem'
+                }}
+                title="Clear all filters and reset to defaults"
+              >
+                Reset All
+              </button>
+            </div>
           </div>
 
-          {/* Visualization Options */}
+          {/* Visualization */}
           <div className="sidebar-section">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ margin: 0 }}>Visualization Options</h3>
+              <h3 style={{ margin: 0 }}>Visualization</h3>
               <ThemeToggle />
             </div>
             
             <label style={{ marginBottom: '1rem', display: 'block' }}>
-              <span style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem' }}>View Mode</span>
+              <span style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>View Mode</span>
               <select 
                 value={viewMode} 
                 onChange={(e) => setViewMode(e.target.value as ViewMode)}
-                style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #d0d0d0' }}
+                style={{ width: '100%', padding: '0.6rem', borderRadius: '0', border: '1px solid #d0d0d0', fontSize: '0.9rem' }}
+                title="Choose how to visualize the models"
               >
-                <option value="3d">3D Latent Space</option>
-                <option value="scatter">2D Latent Space</option>
-                <option value="network">Network Graph</option>
+                <option value="3d">3D Scatter</option>
+                <option value="scatter">2D Scatter</option>
+                <option value="network">Network</option>
                 <option value="distribution">Distribution</option>
-                <option value="stacked">Stacked</option>
-                <option value="heatmap">Heatmap</option>
               </select>
-              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
-                {viewMode === '3d' && 'Interactive 3D exploration of model relationships'}
-                {viewMode === 'scatter' && '2D projection showing model similarity'}
-                {viewMode === 'network' && 'Network graph of model connections'}
-                {viewMode === 'distribution' && 'Statistical distributions of model properties'}
-                {viewMode === 'stacked' && 'Hierarchical view of model families'}
-                {viewMode === 'heatmap' && 'Density heatmap in latent space'}
-              </div>
             </label>
 
-            {/* Rendering Style Selector for 3D View */}
-            {viewMode === '3d' && (
-              <div style={{ marginBottom: '1rem' }}>
-                <RenderingStyleSelector />
-              </div>
-            )}
-
-            {/* Zoom and Label Controls for 3D View */}
-            {viewMode === '3d' && (
+            {/* Zoom and Label Controls for Scatter View */}
+            {viewMode === 'scatter' && (
               <>
                 <ZoomSlider
                   value={zoomLevel}
@@ -763,42 +854,38 @@ function App() {
             )}
 
             <label style={{ marginBottom: '1rem', display: 'block' }}>
-              <span style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem' }}>Color Encoding</span>
+              <span style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Color By</span>
               <select 
                 value={colorBy} 
                 onChange={(e) => setColorBy(e.target.value as ColorByOption)}
-                style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #d0d0d0' }}
+                style={{ width: '100%', padding: '0.6rem', borderRadius: '0', border: '1px solid #d0d0d0', fontSize: '0.9rem' }}
+                title="Choose what attribute to color models by"
               >
-                <option value="library_name">Library (e.g., transformers, diffusers)</option>
-                <option value="pipeline_tag">Pipeline/Task Type</option>
-                <option value="cluster_id">Cluster (semantic groups)</option>
-                <option value="family_depth">Family Tree Depth</option>
-                <option value="downloads">Download Count</option>
-                <option value="likes">Like Count</option>
-                <option value="trending_score">Trending Score</option>
-                <option value="licenses">License Type</option>
+                <option value="library_name">Library</option>
+                <option value="pipeline_tag">Pipeline/Task</option>
+                <option value="cluster_id">Cluster</option>
+                <option value="family_depth">Family Depth</option>
+                <option value="downloads">Downloads</option>
+                <option value="likes">Likes</option>
+                <option value="trending_score">Trending</option>
+                <option value="licenses">License</option>
               </select>
-              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
-                {colorBy === 'cluster_id' && 'Semantic clusters from embeddings'}
-                {colorBy === 'family_depth' && 'Generation depth in family tree'}
-                {colorBy === 'licenses' && 'Model license types'}
-              </div>
             </label>
 
-            {/* Color Scheme Selector (for continuous scales) */}
+            {/* Color Scheme */}
             {(colorBy === 'downloads' || colorBy === 'likes' || colorBy === 'family_depth' || colorBy === 'trending_score') && (
               <label style={{ marginBottom: '1rem', display: 'block' }}>
-                <span style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem' }}>Color Scheme</span>
+                <span style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Color Scheme</span>
                 <select 
                   value={colorScheme} 
                   onChange={(e) => setColorScheme(e.target.value as any)}
-                  style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #d0d0d0' }}
+                  style={{ width: '100%', padding: '0.6rem', borderRadius: '0', border: '1px solid #d0d0d0', fontSize: '0.9rem' }}
                 >
-                  <option value="viridis">Viridis (blue to yellow)</option>
-                  <option value="plasma">Plasma (purple to yellow)</option>
-                  <option value="inferno">Inferno (black to yellow)</option>
-                  <option value="magma">Magma (black to pink)</option>
-                  <option value="coolwarm">Cool-Warm (blue to red)</option>
+                  <option value="viridis">Viridis</option>
+                  <option value="plasma">Plasma</option>
+                  <option value="inferno">Inferno</option>
+                  <option value="magma">Magma</option>
+                  <option value="coolwarm">Cool-Warm</option>
                 </select>
               </label>
             )}
@@ -815,156 +902,115 @@ function App() {
             </label>
 
             <label style={{ marginBottom: '1rem', display: 'block' }}>
-              <span style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem' }}>Size Encoding</span>
+              <span style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Size By</span>
               <select 
                 value={sizeBy} 
                 onChange={(e) => setSizeBy(e.target.value as SizeByOption)}
-                style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #d0d0d0' }}
+                style={{ width: '100%', padding: '0.6rem', borderRadius: '0', border: '1px solid #d0d0d0', fontSize: '0.9rem' }}
+                title="Choose what determines point size"
               >
-                <option value="downloads">Downloads (larger = more popular)</option>
-                <option value="likes">Likes (larger = more liked)</option>
-                <option value="trendingScore">Trending Score</option>
-                <option value="none">Uniform Size</option>
+                <option value="downloads">Downloads</option>
+                <option value="likes">Likes</option>
+                <option value="none">Uniform</option>
               </select>
             </label>
 
-            <div className="sidebar-section" style={{ background: '#f5f5f5', borderColor: '#d0d0d0', marginBottom: '1rem', padding: '0.75rem', borderRadius: '4px', border: '1px solid' }}>
-              <label style={{ display: 'block', marginBottom: '0' }}>
-                <span style={{ fontWeight: '600', display: 'block', marginBottom: '0.5rem', color: '#2d2d2d' }}>
-                  Projection Method
-                </span>
+            <details style={{ marginBottom: '1rem', marginTop: '1rem' }}>
+              <summary style={{ cursor: 'pointer', fontWeight: '500', fontSize: '0.9rem', marginBottom: '0rem' }}>
+                Advanced Settings
+              </summary>
+              <div style={{ marginTop: '0.75rem' }}>
                 <select 
                   value={projectionMethod} 
                   onChange={(e) => setProjectionMethod(e.target.value as 'umap' | 'tsne')}
-                  style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #d0d0d0', fontWeight: '500' }}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0', border: '1px solid #d0d0d0', fontSize: '0.85rem' }}
+                  title="UMAP preserves global structure, t-SNE emphasizes local clusters"
                 >
-                  <option value="umap">UMAP (better global structure)</option>
-                  <option value="tsne">t-SNE (better local clusters)</option>
+                  <option value="umap">UMAP</option>
+                  <option value="tsne">t-SNE</option>
                 </select>
-                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.5rem', lineHeight: '1.4' }}>
-                  <strong>UMAP:</strong> Preserves global structure, better for exploring relationships<br/>
-                  <strong>t-SNE:</strong> Emphasizes local clusters, better for finding groups
-                </div>
-              </label>
-            </div>
+              </div>
+            </details>
           </div>
 
-          {/* View Modes */}
-          <div className="sidebar-section">
-            <h3>View Modes</h3>
+          {/* Display Options - Simplified */}
+          <details className="sidebar-section" open>
+            <summary style={{ cursor: 'pointer', fontWeight: '600', fontSize: '1rem', marginBottom: '1rem', listStyle: 'none' }}>
+              <h3 style={{ display: 'inline', margin: 0 }}>Display Options</h3>
+            </summary>
             
-            <label style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={baseModelsOnly}
-                onChange={(e) => setBaseModelsOnly(e.target.checked)}
-                style={{ marginRight: '0.5rem', cursor: 'pointer' }}
-              />
-              <div>
-                <span style={{ fontWeight: '500' }}>Base Models Only</span>
-                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
-                  Show only root models (no parent). Click any model to see its family tree.
-                </div>
-              </div>
-            </label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }} title="Show only root models without parents">
+                <input
+                  type="checkbox"
+                  checked={baseModelsOnly}
+                  onChange={(e) => setBaseModelsOnly(e.target.checked)}
+                  style={{ marginRight: '0.5rem', cursor: 'pointer' }}
+                />
+                <span style={{ fontWeight: '500', fontSize: '0.9rem' }}>Base Models Only</span>
+              </label>
 
-            <label style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={semanticSimilarityMode}
-                onChange={(e) => {
-                  setSemanticSimilarityMode(e.target.checked);
-                  if (!e.target.checked) {
-                    setSemanticQueryModel(null);
-                  }
-                }}
-                style={{ marginRight: '0.5rem', cursor: 'pointer' }}
-              />
-              <div>
-                <span style={{ fontWeight: '500' }}>Semantic Similarity View</span>
-                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
-                  Show models sorted by semantic similarity to a query model
-                </div>
-              </div>
-            </label>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }} title="Use family tree structure in embeddings">
+                <input
+                  type="checkbox"
+                  checked={useGraphEmbeddings}
+                  onChange={(e) => setUseGraphEmbeddings(e.target.checked)}
+                  style={{ marginRight: '0.5rem', cursor: 'pointer' }}
+                />
+                <span style={{ fontWeight: '500', fontSize: '0.9rem' }}>Graph-Aware Layout</span>
+              </label>
 
-            <label style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={useGraphEmbeddings}
-                onChange={(e) => setUseGraphEmbeddings(e.target.checked)}
-                style={{ marginRight: '0.5rem', cursor: 'pointer' }}
-              />
-              <div>
-                <span style={{ fontWeight: '500' }}>Graph-Aware Embeddings</span>
-                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
-                  Use embeddings that respect family tree structure. Models in the same family will be closer together.
-                </div>
-              </div>
-            </label>
-            
-            {embeddingType && (
-              <div style={{ 
-                marginTop: '0.5rem', 
-                padding: '0.75rem', 
-                background: embeddingType === 'graph-aware' ? '#e8f5e9' : '#f5f5f5',
-                border: `1px solid ${embeddingType === 'graph-aware' ? '#4caf50' : '#d0d0d0'}`,
-                borderRadius: '4px',
-                fontSize: '0.75rem',
-                color: '#666'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                  <strong style={{ color: '#2d2d2d' }}>
-                    {embeddingType === 'graph-aware' ? 'Graph-Aware' : 'Text-Only'} Embeddings
-                  </strong>
-                </div>
-                <div style={{ fontSize: '0.7rem', color: '#666', lineHeight: '1.4' }}>
-                  {embeddingType === 'graph-aware' 
-                    ? 'Models in the same family tree are positioned closer together, revealing hierarchical relationships.'
-                    : 'Standard text-based embeddings showing semantic similarity from model descriptions and tags.'}
-                </div>
-              </div>
-            )}
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }} title="Sort by similarity to a specific model">
+                <input
+                  type="checkbox"
+                  checked={semanticSimilarityMode}
+                  onChange={(e) => {
+                    setSemanticSimilarityMode(e.target.checked);
+                    if (!e.target.checked) {
+                      setSemanticQueryModel(null);
+                    }
+                  }}
+                  style={{ marginRight: '0.5rem', cursor: 'pointer' }}
+                />
+                <span style={{ fontWeight: '500', fontSize: '0.9rem' }}>Similarity View</span>
+              </label>
+            </div>
 
             {semanticSimilarityMode && (
-              <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'white', borderRadius: '4px', border: '1px solid #d0d0d0' }}>
-                <label style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem' }}>
-                  Query Model ID
-                </label>
+              <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#f9f9f9', borderRadius: '0', border: '1px solid #e0e0e0' }}>
                 <input
                   type="text"
                   value={semanticQueryModel || ''}
                   onChange={(e) => setSemanticQueryModel(e.target.value || null)}
-                  placeholder="e.g., bert-base-uncased"
-                  style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #d0d0d0' }}
+                  placeholder="Enter model ID..."
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0', border: '1px solid #d0d0d0', fontSize: '0.85rem' }}
+                  title="Enter a model ID to compare against"
                 />
-                <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.5rem' }}>
-                  {selectedModel && (
-                    <button
-                      onClick={() => setSemanticQueryModel(selectedModel.model_id)}
-                      style={{
-                        padding: '0.25rem 0.5rem',
-                        background: '#4a90e2',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '0.75rem'
-                      }}
-                    >
-                      Use Selected Model
-                    </button>
-                  )}
-                  <div style={{ marginTop: '0.5rem' }}>
-                    Enter a model ID or click a model in the visualization, then click "Use Selected Model"
-                  </div>
-                </div>
+                {selectedModel && (
+                  <button
+                    onClick={() => setSemanticQueryModel(selectedModel.model_id)}
+                    style={{
+                      marginTop: '0.5rem',
+                      padding: '0.4rem 0.7rem',
+                      background: '#4a90e2',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '0.8rem',
+                      width: '100%'
+                    }}
+                    title="Use the currently selected model"
+                  >
+                    Use Selected Model
+                  </button>
+                )}
               </div>
             )}
-          </div>
+          </details>
 
           {/* Structural Visualization Options */}
-          {viewMode === '3d' && (
+          {viewMode === 'network' && (
             <div className="sidebar-section">
               <h3>Network Structure</h3>
               <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '1rem', lineHeight: '1.4' }}>
@@ -1002,14 +1048,14 @@ function App() {
               </label>
 
               {showNetworkEdges && (
-                <div style={{ marginLeft: '1.5rem', marginBottom: '1rem', padding: '0.75rem', background: 'white', borderRadius: '4px', border: '1px solid #d0d0d0' }}>
+                <div style={{ marginLeft: '1.5rem', marginBottom: '1rem', padding: '0.75rem', background: 'white', borderRadius: '0', border: '1px solid #d0d0d0' }}>
                   <label style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
                     Connection Type
                   </label>
                   <select 
                     value={networkEdgeType} 
                     onChange={(e) => setNetworkEdgeType(e.target.value as 'library' | 'pipeline' | 'combined')}
-                    style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #d0d0d0', fontSize: '0.85rem' }}
+                    style={{ width: '100%', padding: '0.5rem', borderRadius: '0', border: '1px solid #d0d0d0', fontSize: '0.85rem' }}
                   >
                     <option value="combined">Combined (library + pipeline + tags)</option>
                     <option value="library">Library Only</option>
@@ -1035,131 +1081,90 @@ function App() {
             </div>
           )}
 
-          {/* Quick Filters */}
-          <div className="sidebar-section">
-            <h3>Quick Actions</h3>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <button
-                onClick={() => {
-                  setMinDownloads(stats ? Math.ceil(stats.avg_downloads) : 100);
-                  setMinLikes(0);
-                }}
-                className="btn btn-small"
-                style={{
-                  background: '#e3f2fd',
-                  color: '#1976d2',
-                  border: '1px solid #90caf9'
-                }}
-              >
-                Above Avg Downloads
-              </button>
-              <button
-                onClick={() => {
-                  setMinDownloads(10000);
-                  setMinLikes(10);
-                }}
-                className="btn btn-small"
-                style={{
-                  background: '#fff3e0',
-                  color: '#e65100',
-                  border: '1px solid #ffb74d'
-                }}
-              >
-                Popular Models
-              </button>
-              <button
-                onClick={resetFilters}
-                disabled={activeFilterCount === 0}
-                className="btn btn-small btn-secondary"
-                style={{
-                  opacity: activeFilterCount > 0 ? 1 : 0.5,
-                  cursor: activeFilterCount > 0 ? 'pointer' : 'not-allowed'
-                }}
-              >
-                Reset All
-              </button>
+          {/* Advanced Hierarchy Controls */}
+          <details className="sidebar-section" style={{ border: '1px solid #e0e0e0', borderRadius: '0', padding: '0.75rem' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: '600', fontSize: '0.95rem', listStyle: 'none' }}>
+              Hierarchy & Structure
+            </summary>
+            <div style={{ marginTop: '1rem' }}>
+              <label style={{ marginBottom: '1rem', display: 'block' }}>
+                <span style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
+                  Max Hierarchy Depth
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="10"
+                  value={maxHierarchyDepth ?? 10}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    setMaxHierarchyDepth(val === 10 ? null : val);
+                  }}
+                  style={{ width: '100%' }}
+                />
+                <div style={{ fontSize: '0.75rem', color: '#999', marginTop: '0.25rem', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>All levels</span>
+                  <span>{maxHierarchyDepth !== null ? `Depth ≤ ${maxHierarchyDepth}` : 'No limit'}</span>
+                </div>
+              </label>
+              <label style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <input
+                  type="checkbox"
+                  checked={showDistanceHeatmap}
+                  onChange={(e) => setShowDistanceHeatmap(e.target.checked)}
+                />
+                <span style={{ fontSize: '0.85rem' }}>Distance Heatmap</span>
+              </label>
+              {selectedModel && (
+                <div style={{ marginTop: '0.5rem', padding: '0.5rem', background: '#f5f5f5', borderRadius: '0', fontSize: '0.85rem' }}>
+                  <div style={{ fontWeight: '500', marginBottom: '0.25rem' }}>Selected Model:</div>
+                  <div style={{ color: '#666', marginBottom: '0.5rem', wordBreak: 'break-word' }}>{selectedModel.model_id}</div>
+                  {selectedModel.family_depth !== null && (
+                    <div style={{ color: '#666', marginBottom: '0.5rem' }}>
+                      Hierarchy Depth: {selectedModel.family_depth}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (selectedModel.parent_model) {
+                        loadFamilyPath(selectedModel.model_id, selectedModel.parent_model);
+                      } else {
+                        loadFamilyPath(selectedModel.model_id);
+                      }
+                    }}
+                    style={{
+                      padding: '0.25rem 0.5rem',
+                      fontSize: '0.8rem',
+                      background: '#4a90e2',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '0',
+                      cursor: 'pointer',
+                      marginRight: '0.5rem',
+                      marginBottom: '0.5rem'
+                    }}
+                  >
+                    Show Path to Root
+                  </button>
+                  <button
+                    onClick={() => setHighlightedPath([])}
+                    style={{
+                      padding: '0.25rem 0.5rem',
+                      fontSize: '0.8rem',
+                      background: '#6a6a6a',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '0',
+                      cursor: 'pointer',
+                      marginBottom: '0.5rem'
+                    }}
+                  >
+                    Clear Path
+                  </button>
+                </div>
+              )}
             </div>
-          </div>
-
-          <div className="sidebar-section">
-            <h3>Hierarchy Navigation</h3>
-            <label style={{ marginBottom: '1rem', display: 'block' }}>
-              <span style={{ fontWeight: '500', display: 'block', marginBottom: '0.5rem' }}>
-                Max Hierarchy Depth
-              </span>
-              <input
-                type="range"
-                min="0"
-                max="10"
-                value={maxHierarchyDepth ?? 10}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value);
-                  setMaxHierarchyDepth(val === 10 ? null : val);
-                }}
-                style={{ width: '100%', marginTop: '0.5rem' }}
-              />
-              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem', display: 'flex', justifyContent: 'space-between' }}>
-                <span>All levels</span>
-                <span>{maxHierarchyDepth !== null ? `Depth ≤ ${maxHierarchyDepth}` : 'No limit'}</span>
-              </div>
-            </label>
-            <label style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <input
-                type="checkbox"
-                checked={showDistanceHeatmap}
-                onChange={(e) => setShowDistanceHeatmap(e.target.checked)}
-              />
-              <span style={{ fontSize: '0.9rem' }}>Show Distance Heatmap</span>
-            </label>
-            {selectedModel && (
-              <div style={{ marginTop: '0.5rem', padding: '0.5rem', background: '#f5f5f5', borderRadius: '4px', fontSize: '0.85rem' }}>
-                <div style={{ fontWeight: '500', marginBottom: '0.25rem' }}>Selected Model:</div>
-                <div style={{ color: '#666', marginBottom: '0.5rem', wordBreak: 'break-word' }}>{selectedModel.model_id}</div>
-                {selectedModel.family_depth !== null && (
-                  <div style={{ color: '#666', marginBottom: '0.5rem' }}>
-                    Hierarchy Depth: {selectedModel.family_depth}
-                  </div>
-                )}
-                <button
-                  onClick={() => {
-                    if (selectedModel.parent_model) {
-                      loadFamilyPath(selectedModel.model_id, selectedModel.parent_model);
-                    } else {
-                      loadFamilyPath(selectedModel.model_id);
-                    }
-                  }}
-                  style={{
-                    padding: '0.25rem 0.5rem',
-                    fontSize: '0.8rem',
-                    background: '#4a90e2',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '2px',
-                    cursor: 'pointer',
-                    marginRight: '0.5rem',
-                    marginBottom: '0.5rem'
-                  }}
-                >
-                  Show Path to Root
-                </button>
-                <button
-                  onClick={() => setHighlightedPath([])}
-                  style={{
-                    padding: '0.25rem 0.5rem',
-                    fontSize: '0.8rem',
-                    background: '#6a6a6a',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '2px',
-                    cursor: 'pointer',
-                    marginBottom: '0.5rem'
-                  }}
-                >
-                  Clear Path
-                </button>
-              </div>
-            )}
-          </div>
+          </details>
 
           <div className="sidebar-section">
             <h3>Family Tree Explorer</h3>
@@ -1170,7 +1175,7 @@ function App() {
                 onChange={(e) => setSearchInput(e.target.value)}
                 onFocus={() => searchInput.length > 0 && setShowSearchResults(true)}
                 placeholder="Type model name..."
-                style={{ width: '100%', padding: '0.5rem', borderRadius: '2px', border: '1px solid #d0d0d0' }}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: '0', border: '1px solid #d0d0d0' }}
               />
               {showSearchResults && searchResults.length > 0 && (
                 <div style={{
@@ -1182,32 +1187,16 @@ function App() {
                   border: '1px solid #d0d0d0',
                   borderRadius: '2px',
                   marginTop: '2px',
-                  maxHeight: '200px',
-                  overflowY: 'auto',
+                  maxHeight: '400px',
                   zIndex: 1000,
                   boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                 }}>
-                  {searchResults.map((result) => (
-                    <div
-                      key={result.model_id}
-                      onClick={() => {
-                        loadFamilyTree(result.model_id);
-                      }}
-                      style={{
-                        padding: '0.5rem',
-                        cursor: 'pointer',
-                        borderBottom: '1px solid #f0f0f0',
-                        fontSize: '0.85rem'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
-                    >
-                      <div style={{ fontWeight: '500' }}>{result.model_id}</div>
-                      {result.library_name && (
-                        <div style={{ fontSize: '0.75rem', color: '#666' }}>{result.library_name}</div>
-                      )}
-                    </div>
-                  ))}
+                  <VirtualSearchResults
+                    results={searchResults}
+                    onSelect={(result) => {
+                      loadFamilyTree(result.model_id);
+                    }}
+                  />
                 </div>
               )}
             </div>
@@ -1239,7 +1228,7 @@ function App() {
 
           {/* Bookmarks */}
           {bookmarkedModels.length > 0 && (
-            <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#f5f5f5', borderRadius: '2px', border: '1px solid #d0d0d0' }}>
+            <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#f5f5f5', borderRadius: '0', border: '1px solid #d0d0d0' }}>
               <h3 style={{ marginTop: 0, fontSize: '0.9rem', fontWeight: '600' }}>Bookmarks ({bookmarkedModels.length})</h3>
               <div style={{ maxHeight: '150px', overflowY: 'auto', fontSize: '0.85rem' }}>
                 {bookmarkedModels.map(modelId => (
@@ -1265,10 +1254,10 @@ function App() {
 
           {/* Comparison */}
           {comparisonModels.length > 0 && (
-            <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#f5f5f5', borderRadius: '2px', border: '1px solid #d0d0d0' }}>
+            <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#f5f5f5', borderRadius: '0', border: '1px solid #d0d0d0' }}>
               <h3 style={{ marginTop: 0, fontSize: '0.9rem', fontWeight: '600' }}>Comparison ({comparisonModels.length}/3)</h3>
               {comparisonModels.map(model => (
-                <div key={model.model_id} style={{ marginBottom: '0.5rem', padding: '0.5rem', background: 'white', borderRadius: '2px', fontSize: '0.85rem' }}>
+                <div key={model.model_id} style={{ marginBottom: '0.5rem', padding: '0.5rem', background: 'white', borderRadius: '0', fontSize: '0.85rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <strong>{model.model_id}</strong>
                     <button
@@ -1295,7 +1284,7 @@ function App() {
 
           {/* Similar Models */}
           {showSimilar && similarModels.length > 0 && (
-            <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#f5f5f5', borderRadius: '2px', border: '1px solid #d0d0d0' }}>
+            <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#f5f5f5', borderRadius: '0', border: '1px solid #d0d0d0' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                 <h3 style={{ marginTop: 0, fontSize: '0.9rem', fontWeight: '600' }}>Similar Models</h3>
                 <button
@@ -1307,7 +1296,7 @@ function App() {
               </div>
               <div style={{ maxHeight: '200px', overflowY: 'auto', fontSize: '0.85rem' }}>
                 {similarModels.map((similar, idx) => (
-                  <div key={idx} style={{ marginBottom: '0.5rem', padding: '0.5rem', background: 'white', borderRadius: '2px' }}>
+                  <div key={idx} style={{ marginBottom: '0.5rem', padding: '0.5rem', background: 'white', borderRadius: '0' }}>
                     <div style={{ fontWeight: '500' }}>{similar.model_id}</div>
                     <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
                       Similarity: {(similar.similarity * 100).toFixed(1)}% | Distance: {similar.distance.toFixed(3)}
@@ -1324,7 +1313,7 @@ function App() {
 
 
           {selectedModels.length > 0 && (
-            <div style={{ marginTop: '1rem', padding: '0.5rem', background: '#e3f2fd', borderRadius: '4px' }}>
+            <div style={{ marginTop: '1rem', padding: '0.5rem', background: '#e3f2fd', borderRadius: '0' }}>
               <strong>Selected: {selectedModels.length} models</strong>
               <button
                 onClick={() => setSelectedModels([])}
@@ -1344,113 +1333,8 @@ function App() {
           )}
           {!loading && !error && data.length > 0 && (
             <>
-              {viewMode === '3d' && (
-                <div style={{ display: 'flex', gap: '10px', width: '100%', height: '100%' }}>
-                  <div 
-                    style={{ flex: 1, position: 'relative' }}
-                    onMouseMove={(e) => {
-                      setTooltipPosition({ x: e.clientX, y: e.clientY });
-                    }}
-                    onMouseLeave={() => {
-                      setHoveredModel(null);
-                      setTooltipPosition(null);
-                    }}
-                  >
-                    <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#666' }}>Loading 3D visualization...</div>}>
-                      <ScatterPlot3D
-                        width={width * 0.8}
-                        height={height}
-                        data={data}
-                        familyTree={familyTree.length > 0 ? familyTree : undefined}
-                        colorBy={colorBy}
-                        sizeBy={sizeBy}
-                        colorScheme={colorScheme}
-                        showLegend={showLegend}
-                  showLabels={showLabels}
-                  zoomLevel={zoomLevel}
-                  nodeDensity={nodeDensity}
-                  renderingStyle={renderingStyle}
-                        showNetworkEdges={showNetworkEdges}
-                        showStructuralGroups={showStructuralGroups}
-                        overviewMode={overviewMode}
-                        networkEdgeType={networkEdgeType}
-                        onPointClick={(model) => {
-                          setSelectedModel(model);
-                          setIsModalOpen(true);
-                        }}
-                        selectedModelId={selectedModel?.model_id || familyTreeModelId}
-                        selectedModel={selectedModel}
-                        onViewChange={setViewCenter}
-                        targetViewCenter={viewCenter}
-                        onHover={(model, pointer) => {
-                          setHoveredModel(model);
-                          if (model && pointer) {
-                            setTooltipPosition(pointer);
-                          } else {
-                            setTooltipPosition(null);
-                          }
-                        }}
-                        highlightedPath={highlightedPath}
-                        showDistanceHeatmap={showDistanceHeatmap && !!selectedModel}
-                      />
-                    </Suspense>
-                    <ModelTooltip 
-                      model={hoveredModel}
-                      position={tooltipPosition}
-                      visible={!!hoveredModel && !!tooltipPosition}
-                    />
-                  </div>
-                  <div style={{ width: width * 0.2, height: height, display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div style={{
-                      width: width * 0.2 - 20,
-                      padding: '8px',
-                      background: '#f5f5f5',
-                      borderRadius: '2px',
-                      border: '1px solid #d0d0d0',
-                      fontSize: '10px',
-                      fontFamily: "'Instrument Sans', sans-serif"
-                    }}>
-                      <h4 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '11px', fontWeight: '600' }}>UV Projection</h4>
-                      <p style={{ margin: 0, lineHeight: '1.3', color: '#666', fontSize: '9px' }}>
-                        This 2D projection shows the XY plane of the latent space. Click on any point to navigate the 3D view to that region.
-                      </p>
-                    </div>
-                    <UVProjectionSquare
-                      width={width * 0.2 - 20}
-                      height={height * 0.3}
-                      data={data}
-                      familyTree={familyTree.length > 0 ? familyTree : undefined}
-                      colorBy={colorBy}
-                      onRegionSelect={(center: { x: number; y: number; z: number }) => {
-                        setViewCenter(center);
-                        // Camera will automatically animate to this position via targetViewCenter prop
-                      }}
-                        selectedModelId={selectedModel?.model_id || familyTreeModelId}
-                      currentViewCenter={viewCenter}
-                    />
-                    {viewCenter && (
-                      <div style={{
-                        width: width * 0.2 - 20,
-                        padding: '8px',
-                        background: '#f5f5f5',
-                        borderRadius: '2px',
-                        border: '1px solid #d0d0d0',
-                        fontSize: '10px',
-                        fontFamily: "'Instrument Sans', sans-serif"
-                      }}>
-                        <strong style={{ fontSize: '10px' }}>View Center:</strong>
-                        <div style={{ fontSize: '9px', marginTop: '0.25rem', color: '#666' }}>
-                          X: {viewCenter.x.toFixed(3)}<br />
-                          Y: {viewCenter.y.toFixed(3)}<br />
-                          Z: {viewCenter.z.toFixed(3)}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
               {viewMode === 'scatter' && (
-                <EnhancedScatterPlot
+                <ScatterPlot
                   width={width}
                   height={height}
                   data={data}
@@ -1462,6 +1346,26 @@ function App() {
                   }}
                   onBrush={(selected) => {
                     setSelectedModels(selected);
+                  }}
+                />
+              )}
+              {viewMode === '3d' && (
+                <ScatterPlot3D
+                  data={data}
+                  colorBy={colorBy}
+                  sizeBy={sizeBy}
+                  hoveredModel={hoveredModel}
+                  onPointClick={(model) => {
+                    setSelectedModel(model);
+                    setIsModalOpen(true);
+                  }}
+                  onHover={(model, position) => {
+                    setHoveredModel(model);
+                    if (model && position) {
+                      setTooltipPosition(position);
+                    } else {
+                      setTooltipPosition(null);
+                    }
                   }}
                 />
               )}
@@ -1478,12 +1382,6 @@ function App() {
               )}
               {viewMode === 'distribution' && (
                 <DistributionView data={data} width={width} height={height} />
-              )}
-              {viewMode === 'stacked' && (
-                <StackedView data={data} width={width} height={height} />
-              )}
-              {viewMode === 'heatmap' && (
-                <HeatmapView data={data} width={width} height={height} />
               )}
             </>
           )}

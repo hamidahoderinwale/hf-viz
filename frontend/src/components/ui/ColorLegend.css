@@ -2,7 +2,7 @@
   position: absolute;
   background: rgba(255, 255, 255, 0.95);
   border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  border-radius: 0;
   padding: 0.75rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   z-index: 100;
@@ -63,7 +63,7 @@
 .legend-color {
   width: 16px;
   height: 16px;
-  border-radius: 3px;
+  border-radius: 0;
   border: 1px solid #ccc;
   flex-shrink: 0;
 }
@@ -85,7 +85,7 @@
 .legend-gradient {
   display: flex;
   height: 20px;
-  border-radius: 4px;
+  border-radius: 0;
   overflow: hidden;
   border: 1px solid #ccc;
 }

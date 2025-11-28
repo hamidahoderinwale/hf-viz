@@ -1,0 +1,91 @@
+/* 2D Scatter Plot Visualization Styles */
+
+.scatter-plot-container {
+  position: relative;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.scatter-plot-svg {
+  display: block;
+  background: #fafafa;
+}
+
+/* Controls Help Text */
+.scatter-plot-controls-help {
+  position: absolute;
+  bottom: 15px;
+  left: 75px; /* margin.left + 15 */
+  font-size: 11px;
+  color: #555;
+  background-color: rgba(255, 255, 255, 0.95);
+  padding: 8px 12px;
+  border-radius: 0;
+  border: 1px solid #ddd;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  font-weight: 500;
+}
+
+.scatter-plot-controls-help strong {
+  color: #333;
+}
+
+/* Sampling Notice */
+.scatter-plot-sampling-notice {
+  position: absolute;
+  top: 15px;
+  left: 75px; /* margin.left + 15 */
+  font-size: 10px;
+  color: #666;
+  background-color: rgba(255, 243, 205, 0.95);
+  padding: 6px 10px;
+  border-radius: 0;
+  border: 1px solid #ffd966;
+}
+
+/* Zoom Controls (SVG elements - these are styled via D3 but can be referenced) */
+.zoom-controls rect {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+/* Tooltip (SVG elements) */
+.tooltip rect {
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.3));
+}
+
+/* Grid lines */
+.grid line {
+  stroke: #e5e5e5;
+  stroke-dasharray: 2,2;
+  opacity: 0.5;
+}
+
+/* Axes */
+.x-axis text,
+.y-axis text {
+  font-size: 11px;
+  fill: #666;
+}
+
+.x-axis line,
+.y-axis line {
+  stroke: #999;
+}
+
+.x-axis path,
+.y-axis path {
+  stroke: #999;
+}
+
+/* Points (SVG circles styled via D3) */
+circle {
+  cursor: pointer;
+  transition: opacity 0.15s ease, stroke-width 0.15s ease;
+}
+
+/* Brush */
+.brush .selection {
+  fill: rgba(74, 144, 226, 0.2);
+  stroke: #4a90e2;
+  stroke-width: 1.5;
+}
+

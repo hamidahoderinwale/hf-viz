@@ -136,7 +136,7 @@ export default function LiveModelCount({ compact = true }: { compact?: boolean }
           padding: '1rem', 
           background: '#ffebee', 
           border: '1px solid #ffcdd2', 
-          borderRadius: '4px',
+          borderRadius: '0',
           color: '#c62828',
           textAlign: 'center'
         }}>
@@ -146,7 +146,7 @@ export default function LiveModelCount({ compact = true }: { compact?: boolean }
             style={{
               background: '#f5f5f5',
               border: '1px solid #ddd',
-              borderRadius: '4px',
+              borderRadius: '0',
               padding: '0.5rem 1rem',
               cursor: 'pointer',
               fontSize: '0.875rem',

@@ -33,5 +33,5 @@ ENV PORT=8000
 
 # Run the application
 WORKDIR /app/backend
-CMD ["python", "api.py"]
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
 

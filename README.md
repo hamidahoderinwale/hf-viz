@@ -16,6 +16,36 @@ This interactive latent space navigator visualizes ~1.84M models from the [model
 - **GitHub Repository**: [bendlaufer/ai-ecosystem](https://github.com/bendlaufer/ai-ecosystem) - Original research repository with analysis notebooks and datasets
 - **Hugging Face Project**: [modelbiome](https://huggingface.co/modelbiome) - Dataset and project page on Hugging Face Hub
 
+## 🚀 Quick Start (New: Pre-Computed Data)
+
+This project now uses **pre-computed embeddings and coordinates** for instant startup:
+
+### Option 1: Pre-Computed Data (Recommended - 10 seconds startup)
+
+```bash
+# 1. Generate pre-computed data (one-time, ~45 minutes)
+cd backend
+pip install -r config/requirements.txt
+python scripts/precompute_data.py --sample-size 150000
+
+# 2. Start backend (instant!)
+uvicorn api.main:app --host 0.0.0.0 --port 8000
+
+# 3. Start frontend
+cd ../frontend
+npm install && npm start
+```
+
+**Startup time:** ~5-10 seconds ⚡
+
+### Option 2: Traditional Mode (Fallback)
+
+If pre-computed data is not available, the backend will automatically fall back to traditional loading (slower but still functional).
+
+**See:** 
+- [`PRECOMPUTED_DATA.md`](PRECOMPUTED_DATA.md) - Detailed documentation
+- [`DEPLOYMENT.md`](DEPLOYMENT.md) - Production deployment guide
+
 ## Project Structure
 
 ```

@@ -1,6 +1,44 @@
 INFO:     Will watch for changes in these directories: ['/Users/hamidaho/hf_viz/backend']
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [24332] using WatchFiles
-INFO:     Started server process [24386]
+INFO:     Started reloader process [80800] using WatchFiles
+INFO:     Started server process [80972]
 INFO:     Waiting for application startup.
+Repo card metadata block was not found. Setting CardData to empty.
+Batches:   0%|          | 0/40 [00:00<?, ?it/s]Batches:   2%|▎         | 1/40 [00:11<07:23, 11.38s/it]Batches:   5%|▌         | 2/40 [00:20<06:26, 10.18s/it]Batches:   8%|▊         | 3/40 [00:23<04:09,  6.75s/it]Batches:  10%|█         | 4/40 [00:25<02:59,  4.98s/it]Batches:  12%|█▎        | 5/40 [00:28<02:23,  4.10s/it]Batches:  15%|█▌        | 6/40 [00:31<02:10,  3.83s/it]Batches:  18%|█▊        | 7/40 [00:33<01:51,  3.38s/it]Batches:  20%|██        | 8/40 [00:35<01:30,  2.83s/it]Batches:  22%|██▎       | 9/40 [00:37<01:14,  2.42s/it]Batches:  25%|██▌       | 10/40 [00:38<01:01,  2.06s/it]Batches:  28%|██▊       | 11/40 [00:39<00:50,  1.75s/it]Batches:  30%|███       | 12/40 [00:40<00:45,  1.61s/it]Batches:  32%|███▎      | 13/40 [00:41<00:40,  1.51s/it]Batches:  35%|███▌      | 14/40 [00:43<00:36,  1.38s/it]Batches:  38%|███▊      | 15/40 [00:43<00:30,  1.23s/it]Batches:  40%|████      | 16/40 [00:44<00:25,  1.06s/it]Batches:  42%|████▎     | 17/40 [00:45<00:24,  1.07s/it]Batches:  45%|████▌     | 18/40 [00:47<00:25,  1.15s/it]Batches:  48%|████▊     | 19/40 [00:47<00:21,  1.01s/it]Batches:  50%|█████     | 20/40 [00:48<00:18,  1.10it/s]Batches:  52%|█████▎    | 21/40 [00:49<00:17,  1.07it/s]Batches:  55%|█████▌    | 22/40 [00:50<00:16,  1.12it/s]Batches:  57%|█████▊    | 23/40 [00:51<00:15,  1.12it/s]Batches:  60%|██████    | 24/40 [00:52<00:14,  1.11it/s]Batches:  62%|██████▎   | 25/40 [00:52<00:13,  1.08it/s]Batches:  65%|██████▌   | 26/40 [00:53<00:12,  1.15it/s]Batches:  68%|██████▊   | 27/40 [00:54<00:09,  1.31it/s]Batches:  70%|███████   | 28/40 [00:55<00:09,  1.21it/s]Batches:  72%|███████▎  | 29/40 [00:55<00:08,  1.36it/s]Batches:  75%|███████▌  | 30/40 [00:56<00:07,  1.33it/s]Batches:  78%|███████▊  | 31/40 [00:57<00:06,  1.39it/s]Batches:  80%|████████  | 32/40 [00:57<00:05,  1.42it/s]Batches:  82%|████████▎ | 33/40 [00:58<00:04,  1.61it/s]Batches:  85%|████████▌ | 34/40 [00:58<00:03,  1.71it/s]Batches:  88%|████████▊ | 35/40 [00:59<00:03,  1.53it/s]Batches:  90%|█████████ | 36/40 [01:00<00:02,  1.48it/s]Batches:  92%|█████████▎| 37/40 [01:00<00:01,  1.53it/s]Batches:  95%|█████████▌| 38/40 [01:01<00:01,  1.96it/s]Batches:  98%|█████████▊| 39/40 [01:01<00:00,  2.10it/s]Batches: 100%|██████████| 40/40 [01:01<00:00,  2.14it/s]Batches: 100%|██████████| 40/40 [01:01<00:00,  1.55s/it]
+/Users/hamidaho/hf_viz/venv/lib/python3.13/site-packages/umap/umap_.py:1952: UserWarning: n_jobs value 1 overridden to 1 by setting random_state. Use no seed for parallelism.
+  warn(
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+/Users/hamidaho/hf_viz/venv/lib/python3.13/site-packages/sklearn/utils/extmath.py:203: RuntimeWarning: divide by zero encountered in matmul
+  ret = a @ b
+/Users/hamidaho/hf_viz/venv/lib/python3.13/site-packages/sklearn/utils/extmath.py:203: RuntimeWarning: overflow encountered in matmul
+  ret = a @ b
+/Users/hamidaho/hf_viz/venv/lib/python3.13/site-packages/sklearn/utils/extmath.py:203: RuntimeWarning: invalid value encountered in matmul
+  ret = a @ b
+/Users/hamidaho/hf_viz/venv/lib/python3.13/site-packages/sklearn/cluster/_kmeans.py:237: RuntimeWarning: divide by zero encountered in matmul
+  current_pot = closest_dist_sq @ sample_weight
+/Users/hamidaho/hf_viz/venv/lib/python3.13/site-packages/sklearn/cluster/_kmeans.py:237: RuntimeWarning: overflow encountered in matmul
+  current_pot = closest_dist_sq @ sample_weight
+/Users/hamidaho/hf_viz/venv/lib/python3.13/site-packages/sklearn/cluster/_kmeans.py:237: RuntimeWarning: invalid value encountered in matmul
+  current_pot = closest_dist_sq @ sample_weight
+INFO:     Application startup complete.
+Repo card metadata block was not found. Setting CardData to empty.
+INFO:     127.0.0.1:50374 - "GET /api/model-count/current?use_models_page=true&use_dataset_snapshot=true&use_cache=true HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50523 - "GET /api/clusters HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50531 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50533 - "GET /api/models?min_downloads=0&min_likes=0&color_by=library_name&size_by=downloads&projection_method=umap&base_models_only=false&use_graph_embeddings=false&max_points=10000 HTTP/1.1" 200 OK
+Repo card metadata block was not found. Setting CardData to empty.
+INFO:     127.0.0.1:51282 - "GET /api/model-count/current?use_models_page=true&use_dataset_snapshot=true&use_cache=true HTTP/1.1" 200 OK
+Repo card metadata block was not found. Setting CardData to empty.
+INFO:     127.0.0.1:51928 - "GET /api/model-count/current?use_models_page=true&use_dataset_snapshot=true&use_cache=true HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52804 - "GET /api/clusters HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52810 - "GET /api/stats HTTP/1.1" 200 OK
+Repo card metadata block was not found. Setting CardData to empty.
+INFO:     127.0.0.1:52810 - "GET /api/model-count/current?use_models_page=true&use_dataset_snapshot=true&use_cache=true HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53301 - "GET /api/clusters HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53303 - "GET /api/stats HTTP/1.1" 200 OK
+Repo card metadata block was not found. Setting CardData to empty.
+INFO:     127.0.0.1:53490 - "GET /api/model-count/current?use_models_page=true&use_dataset_snapshot=true&use_cache=true HTTP/1.1" 200 OK
 Repo card metadata block was not found. Setting CardData to empty.

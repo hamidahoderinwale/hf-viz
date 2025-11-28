@@ -201,14 +201,14 @@ export default function ModelModal({
               className={`modal-tab ${activeTab === 'details' ? 'active' : ''}`}
               onClick={() => setActiveTab('details')}
             >
-              <span className="tab-icon">📋</span>
+              <span className="tab-icon"></span>
               <span>Details</span>
             </button>
             <button
               className={`modal-tab ${activeTab === 'files' ? 'active' : ''}`}
               onClick={() => setActiveTab('files')}
             >
-              <span className="tab-icon">📁</span>
+              <span className="tab-icon"></span>
               <span>Files</span>
             </button>
             {(papers.length > 0 || papersLoading) && (
@@ -216,7 +216,7 @@ export default function ModelModal({
                 className={`modal-tab ${activeTab === 'papers' ? 'active' : ''}`}
                 onClick={() => setActiveTab('papers')}
               >
-                <span className="tab-icon">📄</span>
+                <span className="tab-icon"></span>
                 <span>Papers</span>
                 {papers.length > 0 && <span className="tab-badge">{papers.length}</span>}
               </button>

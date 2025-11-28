@@ -32,7 +32,7 @@
 .distribution-chart {
   background: var(--bg-primary, #ffffff);
   border: 1px solid var(--border-color, #e0e0e0);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 1rem;
 }
 
@@ -66,7 +66,7 @@
   flex: 1;
   height: 24px;
   background: var(--bg-secondary, #f5f5f5);
-  border-radius: 4px;
+  border-radius: 0;
   overflow: hidden;
   position: relative;
 }
@@ -74,7 +74,7 @@
 .distribution-bar {
   height: 100%;
   background: linear-gradient(90deg, var(--accent-color, #4a90e2), #6ba3e8);
-  border-radius: 4px;
+  border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: flex-end;

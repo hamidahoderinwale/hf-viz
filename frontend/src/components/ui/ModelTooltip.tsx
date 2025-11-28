@@ -116,7 +116,7 @@ export default function ModelTooltip({ model, position, visible }: ModelTooltipP
         background: 'rgba(0, 0, 0, 0.9)',
         color: 'white',
         padding: '12px 16px',
-        borderRadius: '8px',
+        borderRadius: '0',
         fontSize: '13px',
         maxWidth: '350px',
         zIndex: 10000,

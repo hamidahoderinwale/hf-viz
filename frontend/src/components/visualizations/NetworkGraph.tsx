@@ -35,10 +35,27 @@ export default function NetworkGraph({
   const [links, setLinks] = useState<Link[]>([]);
   const [isCalculating, setIsCalculating] = useState(false);
 
-  // Create nodes from models
+  // Performance: Limit nodes for large datasets
+  const limitedData = useMemo(() => {
+    const NODE_LIMIT = 500; // Limit network graph to 500 nodes for performance
+    if (data.length <= NODE_LIMIT) return data;
+    
+    // Prioritize base models and popular models
+    const sorted = [...data].sort((a, b) => {
+      const aIsBase = !a.parent_model || a.parent_model === '[]';
+      const bIsBase = !b.parent_model || b.parent_model === '[]';
+      if (aIsBase && !bIsBase) return -1;
+      if (!aIsBase && bIsBase) return 1;
+      return (b.downloads || 0) - (a.downloads || 0);
+    });
+    
+    return sorted.slice(0, NODE_LIMIT);
+  }, [data]);
+
+  // Create nodes from limited data
   const nodes = useMemo(() => {
     const nodeMap = new Map<string, Node>();
-    data.forEach((model) => {
+    limitedData.forEach((model) => {
       if (!nodeMap.has(model.model_id)) {
         nodeMap.set(model.model_id, {
           id: model.model_id,
@@ -48,7 +65,7 @@ export default function NetworkGraph({
       }
     });
     return Array.from(nodeMap.values());
-  }, [data]);
+  }, [limitedData]);
 
   // Initialize Web Worker
   useEffect(() => {

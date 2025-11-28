@@ -14,12 +14,9 @@ interface ModeOption {
 }
 
 const MODES: ModeOption[] = [
-  { value: '3d', label: '3D Embedding', icon: '🎯', description: 'Interactive 3D exploration' },
-  { value: 'scatter', label: '2D Scatter', icon: '📊', description: '2D projection view' },
-  { value: 'network', label: 'Network', icon: '🕸️', description: 'Network graph view' },
-  { value: 'distribution', label: 'Distribution', icon: '📈', description: 'Statistical distributions' },
-  { value: 'stacked', label: 'Stacked', icon: '📚', description: 'Hierarchical view' },
-  { value: 'heatmap', label: 'Heatmap', icon: '🔥', description: 'Density heatmap' },
+  { value: 'scatter', label: '2D Scatter', icon: '', description: '2D projection view' },
+  { value: 'network', label: 'Network', icon: '', description: 'Network graph view' },
+  { value: 'distribution', label: 'Distribution', icon: '', description: 'Statistical distributions' },
 ];
 
 export default function VisualizationModeButtons() {

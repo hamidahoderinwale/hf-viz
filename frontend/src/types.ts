@@ -28,7 +28,11 @@ export interface SearchResult {
   library_name: string | null;
   pipeline_tag: string | null;
   downloads: number;
+  likes: number;
   parent_model: string | null;
+  // Aliases for backward compatibility with VirtualSearchResults
+  library?: string | null;
+  pipeline?: string | null;
 }
 
 export interface SimilarModel {

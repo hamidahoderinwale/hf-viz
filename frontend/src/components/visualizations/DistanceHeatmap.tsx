@@ -63,9 +63,9 @@ export default function DistanceHeatmap({
           background: 'rgba(0, 0, 0, 0.7)',
           color: 'white',
           padding: '8px 12px',
-          borderRadius: '4px',
+          borderRadius: '0',
           fontSize: '11px',
-          fontFamily: "'Instrument Sans', sans-serif"
+          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif"
         }}
       >
         <div style={{ fontWeight: 600, marginBottom: '4px' }}>Distance Heatmap</div>

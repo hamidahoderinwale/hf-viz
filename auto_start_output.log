@@ -1,0 +1,8 @@
+🔍 Monitoring pre-computation process...
+📊 Log file: /Users/hamidaho/hf_viz/precompute.log
+
+
+
+✅ Pre-computation complete!
+
+❌ ERROR: models_v1.parquet not found

@@ -65,7 +65,7 @@ class ErrorBoundary extends Component<Props, State> {
             margin: '2rem',
             background: '#ffebee',
             border: '1px solid #ffcdd2',
-            borderRadius: '8px',
+            borderRadius: '0',
             color: '#c62828',
           }}
         >
@@ -83,7 +83,7 @@ class ErrorBoundary extends Component<Props, State> {
                   marginTop: '0.5rem',
                   padding: '1rem',
                   background: '#fff',
-                  borderRadius: '4px',
+                  borderRadius: '0',
                   overflow: 'auto',
                   fontSize: '0.875rem',
                 }}
@@ -101,7 +101,7 @@ class ErrorBoundary extends Component<Props, State> {
               background: '#4a4a4a',
               color: 'white',
               border: 'none',
-              borderRadius: '4px',
+              borderRadius: '0',
               cursor: 'pointer',
             }}
           >
