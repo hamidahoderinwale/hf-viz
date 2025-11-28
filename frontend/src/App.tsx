@@ -283,23 +283,22 @@ function App() {
     [fetchData]
   );
 
+  // Consolidated effect to handle both search and filter changes
   useEffect(() => {
+    // For search queries, use debounced version
     if (searchQuery) {
       debouncedFetchData();
+      return () => {
+        debouncedFetchData.cancel();
+      };
     } else {
-      fetchData();
+      // For filter changes without search, also use debounced version
+      debouncedFetchData();
+      return () => {
+        debouncedFetchData.cancel();
+      };
     }
-    return () => {
-      debouncedFetchData.cancel();
-    };
-  }, [searchQuery, debouncedFetchData, fetchData]);
-
-  useEffect(() => {
-    debouncedFetchData();
-    return () => {
-      debouncedFetchData.cancel();
-    };
-  }, [minDownloads, minLikes, colorBy, sizeBy, baseModelsOnly, projectionMethod, semanticSimilarityMode, semanticQueryModel, useGraphEmbeddings, debouncedFetchData]);
+  }, [searchQuery, minDownloads, minLikes, colorBy, sizeBy, baseModelsOnly, projectionMethod, semanticSimilarityMode, semanticQueryModel, useGraphEmbeddings, selectedClusters, viewMode, debouncedFetchData]);
 
   // Function to clear cache and refresh stats
   const clearCacheAndRefresh = useCallback(async () => {
