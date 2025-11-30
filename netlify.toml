@@ -5,8 +5,6 @@
 
 [build.environment]
   NODE_VERSION = "18"
-  # Set your Railway backend URL in Netlify dashboard:
-  # Site settings → Environment variables → REACT_APP_API_URL
 
 [[redirects]]
   from = "/*"
@@ -21,9 +19,7 @@
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
 
-# Cache static assets aggressively
 [[headers]]
   for = "/static/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
-
