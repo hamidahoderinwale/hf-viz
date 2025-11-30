@@ -4,6 +4,8 @@
 
 [build.environment]
   NODE_VERSION = "18"
+  # Disable Python - this is a Node.js frontend only
+  PYTHON_VERSION = ""
 
 [[redirects]]
   from = "/*"
