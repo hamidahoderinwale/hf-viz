@@ -37,3 +37,4 @@ flagged/
 /data/
 !frontend/src/utils/data/
 
+assets/
