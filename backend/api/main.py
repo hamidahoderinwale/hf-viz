@@ -295,6 +295,16 @@ def compute_clusters(reduced_embeddings: np.ndarray, n_clusters: int = 50) -> np
 
 @app.get("/")
 async def root():
+    # Check if frontend build exists and serve it
+    _backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _frontend_build_path = os.path.join(os.path.dirname(_backend_dir), "frontend", "build")
+    index_path = os.path.join(_frontend_build_path, "index.html")
+    
+    if os.path.exists(index_path):
+        from starlette.responses import FileResponse as StarletteFileResponse
+        return StarletteFileResponse(index_path)
+    
+    # Fallback to API status when no frontend build
     return {"message": "HF Model Ecosystem API", "status": "running"}
 
 
