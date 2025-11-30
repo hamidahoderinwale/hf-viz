@@ -6,6 +6,7 @@ import React from 'react';
 import { FixedSizeList as List } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { SearchResult } from '../../types';
+import './VirtualSearchResults.css';
 
 interface VirtualSearchResultsProps {
   results: SearchResult[];
@@ -24,33 +25,18 @@ export const VirtualSearchResults: React.FC<VirtualSearchResultsProps> = ({
 
     return (
       <div
-        style={{
-          ...style,
-          cursor: 'pointer',
-          padding: '8px 12px',
-          backgroundColor: isSelected ? 'var(--accent-color)' : 'transparent',
-          borderBottom: '1px solid var(--border-color)',
-        }}
+        style={style}
+        className={`virtual-search-result ${isSelected ? 'selected' : ''}`}
         onClick={() => onSelect(result)}
-        onMouseEnter={(e) => {
-          if (!isSelected) {
-            e.currentTarget.style.backgroundColor = 'var(--hover-color)';
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (!isSelected) {
-            e.currentTarget.style.backgroundColor = 'transparent';
-          }
-        }}
       >
-        <div style={{ fontWeight: 500 }}>{result.model_id}</div>
+        <div className="virtual-search-result-title">{result.model_id}</div>
         {result.library_name && (
-          <div style={{ fontSize: '0.875rem', opacity: 0.7, marginTop: '2px' }}>
+          <div className="virtual-search-result-meta">
             {result.library_name} {result.pipeline_tag && `• ${result.pipeline_tag}`}
           </div>
         )}
         {(result.downloads || result.likes) && (
-          <div style={{ fontSize: '0.75rem', opacity: 0.6, marginTop: '2px' }}>
+          <div className="virtual-search-result-stats">
             {result.downloads?.toLocaleString()} downloads • {result.likes?.toLocaleString()} likes
           </div>
         )}

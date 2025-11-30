@@ -2,11 +2,22 @@
 
 .scatter-plot-container {
   position: relative;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  overflow: visible;
 }
 
 .scatter-plot-svg {
   display: block;
+  background: var(--bg-tertiary, #1a1a1a);
+}
+
+/* Dark theme support */
+[data-theme="dark"] .scatter-plot-svg {
+  background: #0a0a0a;
+}
+
+[data-theme="light"] .scatter-plot-svg,
+:root:not([data-theme="dark"]) .scatter-plot-svg {
   background: #fafafa;
 }
 

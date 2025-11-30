@@ -68,8 +68,42 @@
   opacity: 0.9;
 }
 
+.count-loading-full {
+  text-align: center;
+  padding: 1rem;
+  color: var(--text-tertiary);
+}
+
 .count-error {
   color: #ffcccc;
+}
+
+.count-error-full {
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.count-error-message {
+  margin-bottom: 0.5rem;
+  color: #ef4444;
+}
+
+.count-retry-btn {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-medium);
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  transition: all var(--transition-base);
+}
+
+.count-retry-btn:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent-blue);
 }
 
 /* Full version (for sidebar) - matches sidebar-section style */

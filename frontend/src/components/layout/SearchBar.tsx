@@ -3,6 +3,7 @@
  * Integrates with filter store and triggers map zoom/modal open.
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { X } from 'lucide-react';
 import { useFilterStore } from '../../stores/filterStore';
 import './SearchBar.css';
 
@@ -56,8 +57,7 @@ export default function SearchBar({ onSelect, onZoomTo }: SearchBarProps) {
         setResults(data.results || []);
         setIsOpen(true);
         setSelectedIndex(-1);
-      } catch (err) {
-        console.error('Search error:', err);
+      } catch {
         setResults([]);
       } finally {
         setIsLoading(false);
@@ -146,7 +146,7 @@ export default function SearchBar({ onSelect, onZoomTo }: SearchBarProps) {
           aria-expanded={isOpen}
           aria-haspopup="listbox"
         />
-        {isLoading && <div className="search-loading">⟳</div>}
+        {isLoading && <div className="search-loading">Loading...</div>}
         {query.length > 0 && !isLoading && (
           <button
             className="search-clear"
@@ -157,7 +157,7 @@ export default function SearchBar({ onSelect, onZoomTo }: SearchBarProps) {
             }}
             aria-label="Clear search"
           >
-            ×
+            <X size={14} />
           </button>
         )}
       </div>

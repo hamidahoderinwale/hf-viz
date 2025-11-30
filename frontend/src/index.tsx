@@ -26,13 +26,18 @@ const isWebGLError = (error: any, message?: string): boolean => {
   const errorStr = error?.toString() || '';
   const messageStr = message?.toString() || '';
   const combined = `${errorStr} ${messageStr}`.toLowerCase();
+  const stack = error?.stack?.toLowerCase() || '';
   
   return (
     combined.includes('webgl') ||
     combined.includes('context lost') ||
     combined.includes('webglrenderer') ||
+    combined.includes('three.module.js') ||
+    combined.includes('three.js') ||
     error?.message?.toLowerCase().includes('webgl') ||
-    error?.stack?.toLowerCase().includes('webgl')
+    stack.includes('webgl') ||
+    stack.includes('three.module.js') ||
+    stack.includes('three.js')
   );
 };
 
@@ -48,6 +53,18 @@ window.addEventListener('error', (event) => {
     if (process.env.NODE_ENV === 'development') {
       console.warn('WebGL context error (handled):', event.message);
     }
+    event.preventDefault();
+    event.stopPropagation();
+    return false;
+  }
+  // Suppress 404 errors for expected API endpoints
+  if (
+    event.message &&
+    (event.message.includes('404') || event.message.includes('Failed to load resource')) &&
+    (event.message.includes('/api/family/') ||
+     (event.message.includes('/api/model/') && event.message.includes('/papers')) ||
+     event.message.includes('/api/family/path/'))
+  ) {
     event.preventDefault();
     event.stopPropagation();
     return false;
@@ -69,29 +86,100 @@ window.addEventListener('unhandledrejection', (event) => {
     event.preventDefault();
     event.stopPropagation();
   }
+  // Suppress 404 promise rejections for expected API endpoints
+  const reasonStr = String(event.reason || event.promise || '');
+  if (
+    reasonStr.includes('404') &&
+    (reasonStr.includes('/api/family/') ||
+     (reasonStr.includes('/api/model/') && reasonStr.includes('/papers')) ||
+     reasonStr.includes('/api/family/path/'))
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
 }, true); // Use capture phase
 
-// Also suppress console errors for WebSocket and WebGL issues
+// Suppress console errors and warnings for WebSocket and WebGL issues
+// Must override BEFORE any imports that might log
 const originalConsoleError = console.error;
-console.error = (...args: any[]) => {
+const originalConsoleWarn = console.warn;
+const originalConsoleLog = console.log;
+
+// Comprehensive error suppression
+const shouldSuppress = (args: any[]): boolean => {
   const message = args.join(' ').toLowerCase();
+  const source = args.find(arg => typeof arg === 'string' && arg.includes('.js'));
+  
+  // Check for deprecated MouseEvent warnings (from Three.js OrbitControls)
+  if (
+    message.includes('mouseevent.mozpressure') ||
+    message.includes('mouseevent.mozinputsource') ||
+    message.includes('is deprecated')
+  ) {
+    return true;
+  }
+  
+  // Check for WebSocket errors
   if (
     message.includes('websocket') ||
     message.includes('websocketclient') ||
     message.includes('initsocket')
   ) {
-    // Suppress WebSocket console errors
-    return;
+    return true;
   }
+  
+  // Check for WebGL/Three.js errors (including three.module.js and bundle.js)
   if (
     message.includes('webgl') ||
     message.includes('context lost') ||
-    message.includes('webglrenderer')
+    message.includes('webglrenderer') ||
+    message.includes('three.webglrenderer') ||
+    message.includes('three.webglrenderer: context lost') ||
+    (source && (source.includes('three.module.js') || 
+                source.includes('three.js') || 
+                source.includes('bundle.js')))
   ) {
-    // Suppress WebGL context loss console errors (handled by component)
-    return;
+    return true;
+  }
+  
+  // Check for NetworkError (expected during startup)
+  if (message.includes('networkerror') || message.includes('network error')) {
+    return true;
+  }
+  
+  // Suppress 404 errors for expected API endpoints (family, papers, path)
+  if (
+    message.includes('404') &&
+    (message.includes('/api/family/') ||
+     (message.includes('/api/model/') && message.includes('/papers')) ||
+     message.includes('/api/family/path/'))
+  ) {
+    return true;
+  }
+  
+  return false;
+};
+
+console.error = (...args: any[]) => {
+  if (shouldSuppress(args)) {
+    return; // Suppress
   }
   originalConsoleError.apply(console, args);
+};
+
+console.warn = (...args: any[]) => {
+  if (shouldSuppress(args)) {
+    return; // Suppress
+  }
+  originalConsoleWarn.apply(console, args);
+};
+
+// Also suppress console.log for Three.js WebGL messages
+console.log = (...args: any[]) => {
+  if (shouldSuppress(args)) {
+    return; // Suppress
+  }
+  originalConsoleLog.apply(console, args);
 };
 
 const root = ReactDOM.createRoot(

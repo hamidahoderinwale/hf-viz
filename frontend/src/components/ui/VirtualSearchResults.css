@@ -1,0 +1,39 @@
+/* ============================================
+   VIRTUAL SEARCH RESULTS
+   ============================================ */
+
+.virtual-search-result {
+  cursor: pointer;
+  padding: 8px 12px;
+  background-color: transparent;
+  border-bottom: 1px solid var(--border-light);
+  transition: background-color var(--transition-base);
+}
+
+.virtual-search-result:hover {
+  background-color: var(--bg-secondary);
+}
+
+.virtual-search-result.selected {
+  background-color: var(--bg-tertiary);
+}
+
+.virtual-search-result-title {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.virtual-search-result-meta {
+  font-size: 0.875rem;
+  opacity: 0.7;
+  margin-top: 2px;
+  color: var(--text-secondary);
+}
+
+.virtual-search-result-stats {
+  font-size: 0.75rem;
+  opacity: 0.6;
+  margin-top: 2px;
+  color: var(--text-tertiary);
+}
+

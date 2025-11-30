@@ -193,7 +193,6 @@ export default function NetworkGraph({
         setLinks(e.data.result.links);
         setIsCalculating(false);
       } else if (e.data.type === 'error') {
-        console.error('Worker error:', e.data.error);
         setIsCalculating(false);
       }
     };
