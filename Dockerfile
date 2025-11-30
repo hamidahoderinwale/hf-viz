@@ -1,37 +1,33 @@
-# Use Python 3.11 slim image for smaller size
+# Hugging Face Spaces Docker deployment
 FROM python:3.11-slim
 
-# Set working directory
+# Create non-root user (required by HF Spaces)
+RUN useradd -m -u 1000 user
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
+# Install dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc g++ && \
+    rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
 COPY requirements.txt .
-COPY backend/requirements.txt backend/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir -r backend/requirements.txt
+# Copy application
+COPY --chown=user backend/ /app/backend/
 
-# Copy application code
-COPY . .
+# Bundle precomputed data for instant startup
+COPY --chown=user precomputed_data/ /app/precomputed_data/
+COPY --chown=user cache/ /app/cache/
 
-# Create cache directory
-RUN mkdir -p cache
+# Switch to non-root user
+USER user
 
-# Expose port (will be overridden by PORT env var in cloud platforms)
-EXPOSE 8000
-
-# Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV PORT=8000
+ENV PORT=7860
+ENV ALLOW_ALL_ORIGINS=true
 
-# Run the application
 WORKDIR /app/backend
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE 7860
 
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "7860"]

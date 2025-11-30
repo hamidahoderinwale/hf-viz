@@ -32,10 +32,9 @@ frontend/.env.development.local
 frontend/.env.test.local
 frontend/.env.production.local
 
-# Cache (will be created at runtime)
-cache/*.pkl
-cache/*.npy
-!cache/.gitkeep
+# Keep cache files for fast startup (precomputed UMAP)
+# cache/*.pkl  # INCLUDED for HF Spaces deployment
+# cache/*.npy  # INCLUDED for HF Spaces deployment
 
 # Documentation
 *.md

@@ -34,5 +34,6 @@ flagged/
 # Data
 *.parquet
 *.csv
-data/
+/data/
+!frontend/src/utils/data/
 
