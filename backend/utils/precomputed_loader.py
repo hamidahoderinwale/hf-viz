@@ -1,6 +1,7 @@
 """
 Loader for pre-computed embeddings and UMAP coordinates.
 This module provides fast loading of pre-computed data from Parquet files.
+Supports downloading from HuggingFace Hub if local files are not available.
 """
 
 import os
@@ -13,6 +14,9 @@ import pandas as pd
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# HuggingFace dataset for precomputed data
+HF_PRECOMPUTED_DATASET = os.getenv("HF_PRECOMPUTED_DATASET", "modelbiome/hf-viz-precomputed")
 
 
 class PrecomputedDataLoader:
@@ -135,12 +139,89 @@ class PrecomputedDataLoader:
         return df, embeddings, metadata
 
 
+def download_from_hf_hub(data_dir: str, version: str = "v1") -> bool:
+    """
+    Download precomputed data from HuggingFace Hub.
+    
+    Args:
+        data_dir: Directory to save downloaded files
+        version: Version tag
+    
+    Returns:
+        True if download successful, False otherwise
+    """
+    try:
+        from huggingface_hub import hf_hub_download, HfApi
+        
+        dataset_id = HF_PRECOMPUTED_DATASET
+        logger.info(f"Attempting to download precomputed data from {dataset_id}...")
+        
+        api = HfApi()
+        
+        # Check if the dataset exists
+        try:
+            api.dataset_info(dataset_id)
+        except Exception:
+            logger.info(f"Dataset {dataset_id} not found, skipping download.")
+            return False
+        
+        os.makedirs(data_dir, exist_ok=True)
+        
+        # Download metadata
+        try:
+            metadata_path = hf_hub_download(
+                repo_id=dataset_id,
+                filename=f"metadata_{version}.json",
+                repo_type="dataset",
+                local_dir=data_dir
+            )
+            logger.info(f"Downloaded metadata to {metadata_path}")
+        except Exception as e:
+            logger.warning(f"Could not download metadata: {e}")
+            return False
+        
+        # Download models parquet
+        try:
+            models_path = hf_hub_download(
+                repo_id=dataset_id,
+                filename=f"models_{version}.parquet",
+                repo_type="dataset",
+                local_dir=data_dir
+            )
+            logger.info(f"Downloaded models to {models_path}")
+        except Exception as e:
+            logger.warning(f"Could not download models parquet: {e}")
+            return False
+        
+        # Optionally download embeddings
+        try:
+            hf_hub_download(
+                repo_id=dataset_id,
+                filename=f"embeddings_{version}.parquet",
+                repo_type="dataset",
+                local_dir=data_dir
+            )
+            logger.info("Downloaded embeddings parquet")
+        except Exception:
+            logger.info("Embeddings file not available (optional)")
+        
+        return True
+        
+    except ImportError:
+        logger.warning("huggingface_hub not installed, cannot download precomputed data")
+        return False
+    except Exception as e:
+        logger.warning(f"Failed to download precomputed data: {e}")
+        return False
+
+
 def get_precomputed_loader(
     data_dir: Optional[str] = None,
     version: str = "v1"
 ) -> Optional[PrecomputedDataLoader]:
     """
     Get a PrecomputedDataLoader if pre-computed data is available.
+    Will attempt to download from HuggingFace Hub if not found locally.
     
     Args:
         data_dir: Directory containing pre-computed files (default: auto-detect)
@@ -167,11 +248,26 @@ def get_precomputed_loader(
                     logger.info(f"Found pre-computed data in: {dir_path}")
                     return loader
         
+        # Try to download from HF Hub
+        download_dir = root_dir / "precomputed_data"
+        if download_from_hf_hub(str(download_dir), version):
+            loader = PrecomputedDataLoader(data_dir=str(download_dir), version=version)
+            if loader.check_available():
+                logger.info(f"Successfully loaded pre-computed data from HF Hub")
+                return loader
+        
         return None
     else:
         loader = PrecomputedDataLoader(data_dir=data_dir, version=version)
         if loader.check_available():
             return loader
+        
+        # Try to download
+        if download_from_hf_hub(data_dir, version):
+            loader = PrecomputedDataLoader(data_dir=data_dir, version=version)
+            if loader.check_available():
+                return loader
+        
         return None
 
 
