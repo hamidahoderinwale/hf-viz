@@ -1,20 +1,36 @@
-# Hugging Face Spaces Docker deployment
+# Hugging Face Spaces - Full Stack Deployment
+# Serves both React frontend and FastAPI backend
+
+FROM node:18-slim AS frontend-builder
+
+WORKDIR /frontend
+COPY frontend/package*.json ./
+RUN npm ci --legacy-peer-deps
+COPY frontend/ ./
+ENV CI=false
+RUN npm run build
+
+# Production image
 FROM python:3.11-slim
 
 # Create non-root user (required by HF Spaces)
 RUN useradd -m -u 1000 user
 WORKDIR /app
 
-# Install dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc g++ && \
     rm -rf /var/lib/apt/lists/*
 
+# Install Python dependencies
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application
+# Copy backend
 COPY --chown=user backend/ /app/backend/
+
+# Copy frontend build
+COPY --from=frontend-builder --chown=user /frontend/build /app/frontend/build
 
 # Bundle precomputed data for instant startup
 COPY --chown=user precomputed_data/ /app/precomputed_data/

@@ -2298,6 +2298,39 @@ async def get_data_info():
     }
 
 
+# =============================================================================
+# STATIC FILE SERVING (for HF Spaces full-stack deployment)
+# =============================================================================
+
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import FileResponse as StarletteFileResponse
+
+# Check if frontend build exists (for HF Spaces deployment)
+frontend_build_path = os.path.join(os.path.dirname(backend_dir), "frontend", "build")
+if os.path.exists(frontend_build_path):
+    # Serve static files from React build
+    app.mount("/static", StaticFiles(directory=os.path.join(frontend_build_path, "static")), name="static")
+    
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        """Serve React frontend for non-API routes."""
+        # Don't serve frontend for API routes
+        if full_path.startswith("api/") or full_path == "docs" or full_path == "openapi.json":
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        # Try to serve the requested file
+        file_path = os.path.join(frontend_build_path, full_path)
+        if os.path.isfile(file_path):
+            return StarletteFileResponse(file_path)
+        
+        # Fall back to index.html for SPA routing
+        index_path = os.path.join(frontend_build_path, "index.html")
+        if os.path.exists(index_path):
+            return StarletteFileResponse(index_path)
+        
+        raise HTTPException(status_code=404, detail="Not found")
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
