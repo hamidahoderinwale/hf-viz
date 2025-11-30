@@ -4,7 +4,7 @@
 
 **Research Paper**: [arXiv:2508.06811](https://arxiv.org/abs/2508.06811)
 
-🚀 **Live Demo**: [https://huggingface.co/spaces/midah/hf-viz](https://huggingface.co/spaces/midah/hf-viz)
+**Live Demo**: [https://huggingface.co/spaces/midah/hf-viz](https://huggingface.co/spaces/midah/hf-viz)
 
 ## Abstract
 
