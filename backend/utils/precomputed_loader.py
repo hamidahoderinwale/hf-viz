@@ -54,12 +54,11 @@ class PrecomputedDataLoader:
         """Check if pre-computed data is available."""
         metadata_file = self.data_dir / f"metadata_{self.version}.json"
         models_file = self.data_dir / f"models_{self.version}.parquet"
-        embeddings_file = self.data_dir / f"embeddings_{self.version}.parquet"
         
+        # Embeddings file is optional - coordinates are in models file
         return (
             metadata_file.exists() and
-            models_file.exists() and
-            embeddings_file.exists()
+            models_file.exists()
         )
     
     def load_models(self) -> pd.DataFrame:
@@ -115,16 +114,23 @@ class PrecomputedDataLoader:
         
         return embeddings, model_ids
     
-    def load_all(self) -> Tuple[pd.DataFrame, np.ndarray, Dict]:
+    def load_all(self) -> Tuple[pd.DataFrame, Optional[np.ndarray], Dict]:
         """
         Load all pre-computed data.
         
         Returns:
-            Tuple of (models_df, embeddings_array, metadata_dict)
+            Tuple of (models_df, embeddings_array_or_None, metadata_dict)
         """
         metadata = self.load_metadata()
         df = self.load_models()
-        embeddings, _ = self.load_embeddings()
+        
+        # Try to load embeddings, but they're optional
+        embeddings_file = self.data_dir / f"embeddings_{self.version}.parquet"
+        if embeddings_file.exists():
+            embeddings, _ = self.load_embeddings()
+        else:
+            logger.info("Embeddings file not found, skipping...")
+            embeddings = None
         
         return df, embeddings, metadata
 

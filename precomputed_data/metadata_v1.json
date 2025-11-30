@@ -1,0 +1,19 @@
+{
+  "version": "v1",
+  "created_at": "2025-11-29T23:17:45.066035",
+  "total_models": 150000,
+  "embedding_dim": 384,
+  "umap_3d_shape": [
+    150000,
+    3
+  ],
+  "umap_2d_shape": [
+    150000,
+    2
+  ],
+  "unique_libraries": 364,
+  "unique_pipelines": 54,
+  "processing_time_minutes": 35,
+  "pca_dims": 50,
+  "pca_variance_preserved": 0.925
+}
