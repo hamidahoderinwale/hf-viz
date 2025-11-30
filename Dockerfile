@@ -32,9 +32,11 @@ COPY --chown=user backend/ /app/backend/
 # Copy frontend build
 COPY --from=frontend-builder --chown=user /frontend/build /app/frontend/build
 
-# Bundle precomputed data for instant startup
+# Create directories for runtime data
+RUN mkdir -p /app/precomputed_data /app/cache && chown -R user:user /app/precomputed_data /app/cache
+
+# Copy precomputed data if available (metadata only in repo)
 COPY --chown=user precomputed_data/ /app/precomputed_data/
-COPY --chown=user cache/ /app/cache/
 
 # Switch to non-root user
 USER user
