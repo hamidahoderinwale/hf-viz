@@ -3,115 +3,182 @@
  * Supports categorical and continuous color scales.
  */
 
-// Extended color palettes for better variety - Enhanced vibrancy
+// Extended color palettes - HIGHLY VIBRANT for dark mode visibility
 export const CATEGORICAL_COLORS = [
-  '#2563eb', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6',
-  '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
-  '#14b8a6', '#a855f7', '#f43f5e', '#0ea5e9', '#22c55e',
-  '#eab308', '#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4',
-  '#6b6ecf', '#b5cf6b', '#bd9e39', '#e7969c', '#7b4173',
-  '#a55194', '#ce6dbd', '#de9ed6', '#636363', '#8ca252',
-  '#b5a252', '#d6616b', '#e7ba52', '#ad494a', '#843c39',
-  '#d6616b', '#e7969c', '#e7ba52', '#b5cf6b', '#8ca252',
-  '#637939', '#bd9e39', '#d6616b', '#e7969c', '#e7ba52',
+  '#60a5fa', '#fbbf24', '#34d399', '#f87171', '#a78bfa', // Bright versions
+  '#f472b6', '#22d3ee', '#a3e635', '#fb923c', '#818cf8',
+  '#2dd4bf', '#c084fc', '#fb7185', '#38bdf8', '#4ade80',
+  '#facc15', '#3b82f6', '#a855f7', '#ec4899', '#06b6d4',
+  '#00ff88', '#ff6b6b', '#4ecdc4', '#ffe66d', '#95e1d3',
+  '#ff9ff3', '#54a0ff', '#5f27cd', '#00d2d3', '#ff9f43',
+  '#ee5a24', '#0abde3', '#10ac84', '#ff6b81', '#7bed9f',
+  '#70a1ff', '#5352ed', '#ff4757', '#2ed573', '#ffa502',
 ];
 
-// Color schemes for different features - Enhanced vibrancy
+// Color schemes for different features - EXTRA VIBRANT for dark mode
+// Grouped by semantic meaning: NLP (blues), Vision (greens), Audio (purples), Generative (reds/oranges)
 export const LIBRARY_COLORS: Record<string, string> = {
-  'transformers': '#2563eb',
-  'diffusers': '#f59e0b',
-  'sentence-transformers': '#10b981',
-  'timm': '#ef4444',
-  'speechbrain': '#8b5cf6',
-  'fairseq': '#ec4899',
-  'espnet': '#06b6d4',
-  'asteroid': '#84cc16',
-  'keras': '#f97316',
-  'sklearn': '#6366f1',
-  'unknown': '#9ca3af',
+  // NLP / Text frameworks - Bright Blues and Cyans
+  'transformers': '#60a5fa',      // Bright blue - most common
+  'sentence-transformers': '#22d3ee', // Bright cyan
+  'fairseq': '#38bdf8',           // Sky blue
+  'spacy': '#2dd4bf',             // Teal
+  
+  // Vision frameworks - Bright Greens and Limes
+  'timm': '#4ade80',              // Bright green
+  'torchvision': '#a3e635',       // Bright lime
+  'mmdet': '#bef264',             // Yellow-green
+  
+  // Diffusion / Generative - Bright Oranges and Reds
+  'diffusers': '#fb923c',         // Bright orange
+  'stable-baselines3': '#fdba74', // Light orange
+  
+  // Audio frameworks - Bright Purples and Pinks
+  'speechbrain': '#c084fc',       // Bright purple
+  'espnet': '#e879f9',            // Bright fuchsia
+  'asteroid': '#f472b6',          // Bright pink
+  
+  // ML frameworks - Bright Warm colors
+  'keras': '#fbbf24',             // Bright amber
+  'sklearn': '#facc15',           // Bright yellow
+  'pytorch': '#f87171',           // Bright red
+  
+  // Other
+  'unknown': '#cbd5e1',           // Light slate
 };
 
 export const PIPELINE_COLORS: Record<string, string> = {
-  'text-classification': '#2563eb',
-  'token-classification': '#f59e0b',
-  'question-answering': '#10b981',
-  'summarization': '#ef4444',
-  'translation': '#8b5cf6',
-  'text-generation': '#ec4899',
-  'fill-mask': '#06b6d4',
-  'zero-shot-classification': '#84cc16',
-  'automatic-speech-recognition': '#f97316',
-  'text-to-speech': '#6366f1',
-  'image-classification': '#14b8a6',
-  'object-detection': '#a855f7',
-  'image-segmentation': '#f43f5e',
-  'image-to-text': '#0ea5e9',
-  'text-to-image': '#22c55e',
-  'unknown': '#9ca3af',
+  // Text tasks - Bright Blues
+  'text-classification': '#60a5fa',
+  'token-classification': '#93c5fd',
+  'question-answering': '#38bdf8',
+  'fill-mask': '#22d3ee',
+  'text-generation': '#2dd4bf',
+  'summarization': '#5eead4',
+  'translation': '#99f6e4',
+  'zero-shot-classification': '#a5f3fc',
+  
+  // Vision tasks - Bright Greens
+  'image-classification': '#4ade80',
+  'object-detection': '#86efac',
+  'image-segmentation': '#bbf7d0',
+  'image-to-text': '#bef264',
+  
+  // Generative tasks - Bright Oranges/Reds
+  'text-to-image': '#fb923c',
+  'image-to-image': '#fdba74',
+  
+  // Audio tasks - Bright Purples
+  'automatic-speech-recognition': '#c084fc',
+  'text-to-speech': '#d8b4fe',
+  'audio-classification': '#e879f9',
+  
+  // Other
+  'unknown': '#cbd5e1',
 };
 
-// Continuous color scales with optional logarithmic scaling
+// Depth-based color scale - Multi-hue gradient for maximum visibility
+// Root models are bright cyan, deepest are bright magenta
+export function getDepthColorScale(maxDepth: number, isDarkMode: boolean = true): (depth: number) => string {
+  return (depth: number) => {
+    // Normalize depth to 0-1 range
+    const normalized = Math.max(0, Math.min(1, depth / Math.max(maxDepth, 1)));
+    
+    if (isDarkMode) {
+      // Dark mode: Use a vibrant multi-hue gradient (cyan -> green -> yellow -> orange -> pink)
+      // This provides maximum distinguishability between depth levels
+      if (normalized < 0.25) {
+        // Cyan to Green
+        const t = normalized * 4;
+        return `rgb(${Math.floor(34 + (74 - 34) * t)}, ${Math.floor(211 + (222 - 211) * t)}, ${Math.floor(238 + (128 - 238) * t)})`;
+      } else if (normalized < 0.5) {
+        // Green to Yellow
+        const t = (normalized - 0.25) * 4;
+        return `rgb(${Math.floor(74 + (250 - 74) * t)}, ${Math.floor(222 + (204 - 222) * t)}, ${Math.floor(128 + (21 - 128) * t)})`;
+      } else if (normalized < 0.75) {
+        // Yellow to Orange
+        const t = (normalized - 0.5) * 4;
+        return `rgb(${Math.floor(250 + (251 - 250) * t)}, ${Math.floor(204 + (146 - 204) * t)}, ${Math.floor(21 + (60 - 21) * t)})`;
+      } else {
+        // Orange to Pink/Magenta
+        const t = (normalized - 0.75) * 4;
+        return `rgb(${Math.floor(251 + (244 - 251) * t)}, ${Math.floor(146 + (114 - 146) * t)}, ${Math.floor(60 + (182 - 60) * t)})`;
+      }
+    } else {
+      // Light mode: Darker, more saturated colors
+      if (normalized < 0.5) {
+        const t = normalized * 2;
+        return `rgb(${Math.floor(30 + (100 - 30) * t)}, ${Math.floor(100 + (50 - 100) * t)}, ${Math.floor(200 + (150 - 200) * t)})`;
+      } else {
+        const t = (normalized - 0.5) * 2;
+        return `rgb(${Math.floor(100 + (150 - 100) * t)}, ${Math.floor(50 + (30 - 50) * t)}, ${Math.floor(150 + (100 - 150) * t)})`;
+      }
+    }
+  };
+}
+
+// Continuous color scales - EXTRA VIBRANT for dark mode visibility
 export function getContinuousColorScale(
   min: number,
   max: number,
   scheme: 'viridis' | 'plasma' | 'inferno' | 'magma' | 'coolwarm' = 'viridis',
   useLogScale: boolean = false
 ): (value: number) => string {
-  // Use logarithmic scaling for heavily skewed distributions (like downloads/likes)
-  // This provides better visual representation of the data distribution
   const range = max - min || 1;
   const logMin = useLogScale && min > 0 ? Math.log10(min + 1) : min;
   const logMax = useLogScale && max > 0 ? Math.log10(max + 1) : max;
   const logRange = logMax - logMin || 1;
   
-  // Viridis-like color scale (blue to yellow) - Enhanced vibrancy
+  // Viridis - Bright cyan to bright yellow (enhanced for dark mode)
   const viridis = (t: number) => {
-    // Apply gamma correction for more vibrant colors
-    const gamma = 0.7;
-    const tGamma = Math.pow(t, gamma);
-    const r = Math.floor(68 + (253 - 68) * tGamma);
-    const g = Math.floor(1 + (231 - 1) * tGamma);
-    const b = Math.floor(84 + (37 - 84) * tGamma);
-    // Increase saturation slightly
-    return `rgb(${Math.min(255, r)}, ${Math.min(255, g)}, ${Math.min(255, b)})`;
+    if (t < 0.33) {
+      const s = t * 3;
+      return `rgb(${Math.floor(68 + (32 - 68) * s)}, ${Math.floor(170 + (200 - 170) * s)}, ${Math.floor(220 + (170 - 220) * s)})`;
+    } else if (t < 0.66) {
+      const s = (t - 0.33) * 3;
+      return `rgb(${Math.floor(32 + (120 - 32) * s)}, ${Math.floor(200 + (220 - 200) * s)}, ${Math.floor(170 + (90 - 170) * s)})`;
+    } else {
+      const s = (t - 0.66) * 3;
+      return `rgb(${Math.floor(120 + (253 - 120) * s)}, ${Math.floor(220 + (231 - 220) * s)}, ${Math.floor(90 + (37 - 90) * s)})`;
+    }
   };
   
-  // Plasma color scale (purple to yellow) - Enhanced vibrancy
+  // Plasma - Bright purple to bright yellow
   const plasma = (t: number) => {
-    const gamma = 0.7;
-    const tGamma = Math.pow(t, gamma);
-    const r = Math.floor(13 + (240 - 13) * tGamma);
-    const g = Math.floor(8 + (249 - 8) * tGamma);
-    const b = Math.floor(135 + (33 - 135) * tGamma);
-    return `rgb(${Math.min(255, r)}, ${Math.min(255, g)}, ${Math.min(255, b)})`;
+    if (t < 0.33) {
+      const s = t * 3;
+      return `rgb(${Math.floor(100 + (180 - 100) * s)}, ${Math.floor(50 + (50 - 50) * s)}, ${Math.floor(200 + (220 - 200) * s)})`;
+    } else if (t < 0.66) {
+      const s = (t - 0.33) * 3;
+      return `rgb(${Math.floor(180 + (240 - 180) * s)}, ${Math.floor(50 + (100 - 50) * s)}, ${Math.floor(220 + (150 - 220) * s)})`;
+    } else {
+      const s = (t - 0.66) * 3;
+      return `rgb(${Math.floor(240 + (255 - 240) * s)}, ${Math.floor(100 + (220 - 100) * s)}, ${Math.floor(150 + (50 - 150) * s)})`;
+    }
   };
   
-  // Inferno color scale (black to yellow) - Enhanced vibrancy
+  // Inferno - Dark red to bright yellow
   const inferno = (t: number) => {
-    const gamma = 0.6;
-    const tGamma = Math.pow(t, gamma);
-    const r = Math.floor(0 + (252 - 0) * tGamma);
-    const g = Math.floor(0 + (141 - 0) * tGamma);
-    const b = Math.floor(4 + (89 - 4) * tGamma);
-    return `rgb(${Math.min(255, r)}, ${Math.min(255, g)}, ${Math.min(255, b)})`;
+    if (t < 0.33) {
+      const s = t * 3;
+      return `rgb(${Math.floor(60 + (150 - 60) * s)}, ${Math.floor(20 + (40 - 20) * s)}, ${Math.floor(80 + (100 - 80) * s)})`;
+    } else if (t < 0.66) {
+      const s = (t - 0.33) * 3;
+      return `rgb(${Math.floor(150 + (230 - 150) * s)}, ${Math.floor(40 + (100 - 40) * s)}, ${Math.floor(100 + (50 - 100) * s)})`;
+    } else {
+      const s = (t - 0.66) * 3;
+      return `rgb(${Math.floor(230 + (255 - 230) * s)}, ${Math.floor(100 + (200 - 100) * s)}, ${Math.floor(50 + (70 - 50) * s)})`;
+    }
   };
   
-  // Cool-warm color scale (blue to red)
+  // Cool-warm - Bright cyan to bright red
   const coolwarm = (t: number) => {
     if (t < 0.5) {
-      // Cool (blue)
       const s = t * 2;
-      const r = Math.floor(59 * s);
-      const g = Math.floor(76 * s);
-      const b = Math.floor(192 + (255 - 192) * s);
-      return `rgb(${r}, ${g}, ${b})`;
+      return `rgb(${Math.floor(80 + (200 - 80) * s)}, ${Math.floor(180 + (200 - 180) * s)}, ${Math.floor(255 + (220 - 255) * s)})`;
     } else {
-      // Warm (red)
       const s = (t - 0.5) * 2;
-      const r = Math.floor(180 + (255 - 180) * s);
-      const g = Math.floor(4 + (180 - 4) * s);
-      const b = Math.floor(38 * (1 - s));
-      return `rgb(${r}, ${g}, ${b})`;
+      return `rgb(${Math.floor(200 + (255 - 200) * s)}, ${Math.floor(200 + (100 - 200) * s)}, ${Math.floor(220 + (100 - 220) * s)})`;
     }
   };
   

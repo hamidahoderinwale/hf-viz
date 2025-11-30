@@ -48,8 +48,8 @@ export default function ModelCountTracker() {
       if (!response.ok) throw new Error('Failed to fetch growth stats');
       const data = await response.json();
       setGrowthStats(data);
-    } catch (err) {
-      console.error('Error fetching growth stats:', err);
+    } catch {
+      // Silent error handling
     }
   };
 

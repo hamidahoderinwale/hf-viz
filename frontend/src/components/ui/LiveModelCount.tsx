@@ -91,25 +91,15 @@ export default function LiveModelCount({ compact = true }: { compact?: boolean }
         ) : error && !currentCount ? (
           <div className="count-error" title={error}>Error</div>
         ) : currentCount ? (
-          <>
-            <div className="count-badge">
-              <span className="count-label">Live Models:</span>
-              <span className="count-value">{formatNumber(currentCount.total_models)}</span>
-              {lastUpdate && (
-                <span className="count-update" title={new Date(currentCount.timestamp).toLocaleString()}>
-                  {getTimeAgo(lastUpdate)}
-                </span>
-              )}
-            </div>
-            <button 
-              className="count-refresh-btn"
-              onClick={fetchCurrentCount}
-              disabled={loading}
-              title="Refresh count"
-            >
-              ⟳
-            </button>
-          </>
+          <div className="count-badge">
+            <span className="count-label">Live Models:</span>
+            <span className="count-value">{formatNumber(currentCount.total_models)}</span>
+            {lastUpdate && (
+              <span className="count-update" title={new Date(currentCount.timestamp).toLocaleString()}>
+                {getTimeAgo(lastUpdate)}
+              </span>
+            )}
+          </div>
         ) : null}
       </div>
     );
@@ -120,39 +110,13 @@ export default function LiveModelCount({ compact = true }: { compact?: boolean }
     <div className="live-model-count-full">
       <div className="count-header">
         <h4>Live Model Count</h4>
-        <button 
-          className="refresh-btn-small"
-          onClick={fetchCurrentCount}
-          disabled={loading}
-          title="Refresh"
-        >
-          ⟳
-        </button>
       </div>
       {loading && !currentCount ? (
-        <div className="count-loading" style={{ textAlign: 'center', padding: '1rem', color: '#666' }}>Loading...</div>
+        <div className="count-loading-full">Loading...</div>
       ) : error && !currentCount ? (
-        <div className="count-error" style={{ 
-          padding: '1rem', 
-          background: '#ffebee', 
-          border: '1px solid #ffcdd2', 
-          borderRadius: '0',
-          color: '#c62828',
-          textAlign: 'center'
-        }}>
-          <div style={{ marginBottom: '0.5rem' }}>Error: {error}</div>
-          <button 
-            onClick={fetchCurrentCount}
-            style={{
-              background: '#f5f5f5',
-              border: '1px solid #ddd',
-              borderRadius: '0',
-              padding: '0.5rem 1rem',
-              cursor: 'pointer',
-              fontSize: '0.875rem',
-              color: '#333'
-            }}
-          >
+        <div className="count-error-full">
+          <div className="count-error-message">Error: {error}</div>
+          <button className="count-retry-btn" onClick={fetchCurrentCount}>
             Retry
           </button>
         </div>

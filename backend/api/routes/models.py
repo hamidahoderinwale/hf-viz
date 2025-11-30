@@ -13,6 +13,7 @@ from umap import UMAP
 from models.schemas import ModelPoint
 from utils.family_tree import calculate_family_depths
 from utils.dimensionality_reduction import DimensionReducer
+from utils.cache import cached_response
 from core.exceptions import DataNotLoadedError, EmbeddingsNotReadyError
 import api.dependencies as deps
 
@@ -243,5 +244,66 @@ async def get_models(
         "embedding_type": embedding_type,
         "filtered_count": filtered_count,
         "returned_count": len(models)
+    }
+
+
+@router.get("/family/adoption")
+@cached_response(ttl=3600, key_prefix="family_adoption")
+async def get_family_adoption(
+    family: str = Query(..., description="Family name (e.g., 'meta-llama', 'google', 'microsoft')"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of models to return")
+):
+    """
+    Get adoption data for a specific family (S-curve data).
+    Returns models sorted by creation date with their downloads.
+    """
+    if deps.df is None:
+        raise DataNotLoadedError()
+    
+    df = deps.df
+    
+    # Filter by family name (check model_id prefix and tags)
+    family_lower = family.lower()
+    filtered_df = df[
+        df['model_id'].astype(str).str.lower().str.contains(family_lower, regex=False, na=False) |
+        df.get('tags', pd.Series([None] * len(df))).astype(str).str.lower().str.contains(family_lower, regex=False, na=False)
+    ]
+    
+    if len(filtered_df) == 0:
+        return {
+            "family": family,
+            "models": [],
+            "total_models": 0
+        }
+    
+    # Sort by downloads and limit
+    filtered_df = filtered_df.nlargest(limit, 'downloads', keep='first')
+    
+    # Extract required fields
+    model_ids = filtered_df['model_id'].astype(str).values
+    downloads_arr = filtered_df.get('downloads', pd.Series([0] * len(filtered_df))).fillna(0).astype(int).values
+    created_at_arr = filtered_df.get('createdAt', pd.Series([None] * len(filtered_df))).values
+    
+    # Parse dates efficiently
+    dates = pd.to_datetime(created_at_arr, errors='coerce', utc=True)
+    
+    # Build response
+    adoption_data = []
+    for idx in range(len(filtered_df)):
+        date_val = dates.iloc[idx] if isinstance(dates, pd.Series) else dates[idx]
+        if pd.notna(date_val):
+            adoption_data.append({
+                "model_id": model_ids[idx],
+                "downloads": int(downloads_arr[idx]),
+                "created_at": date_val.isoformat()
+            })
+    
+    # Sort by date
+    adoption_data.sort(key=lambda x: x['created_at'] if x['created_at'] else '')
+    
+    return {
+        "family": family,
+        "models": adoption_data,
+        "total_models": len(adoption_data)
     }
 

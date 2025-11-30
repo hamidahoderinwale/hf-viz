@@ -4,6 +4,7 @@
  */
 import React, { useMemo } from 'react';
 import { ModelPoint } from '../../types';
+import './DistanceHeatmap.css';
 
 interface DistanceHeatmapProps {
   data: ModelPoint[];
@@ -18,7 +19,6 @@ export default function DistanceHeatmap({
   selectedModel,
   width,
   height,
-  opacity = 0.3
 }: DistanceHeatmapProps) {
   const distances = useMemo(() => {
     if (!selectedModel) return null;
@@ -45,39 +45,18 @@ export default function DistanceHeatmap({
   
   return (
     <div
-      style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width,
-        height,
-        pointerEvents: 'none',
-        zIndex: 1
-      }}
+      className="distance-heatmap-overlay"
+      style={{ width, height }}
     >
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 10,
-          left: 10,
-          background: 'rgba(0, 0, 0, 0.7)',
-          color: 'white',
-          padding: '8px 12px',
-          borderRadius: '0',
-          fontSize: '11px',
-          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif"
-        }}
-      >
-        <div style={{ fontWeight: 600, marginBottom: '4px' }}>Distance Heatmap</div>
-        <div style={{ fontSize: '10px', opacity: 0.9 }}>
+      <div className="distance-heatmap-info">
+        <div className="distance-heatmap-title">Distance Heatmap</div>
+        <div className="distance-heatmap-detail">
           Showing distance from: <strong>{selectedModel.model_id}</strong>
         </div>
-        <div style={{ fontSize: '10px', opacity: 0.8, marginTop: '4px' }}>
+        <div className="distance-heatmap-range">
           Range: {distances.minDist.toFixed(2)} - {distances.maxDist.toFixed(2)}
         </div>
       </div>
     </div>
   );
 }
-
-

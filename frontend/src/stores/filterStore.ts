@@ -6,11 +6,11 @@ import { create } from 'zustand';
 
 export type ColorByOption = 'domain' | 'license' | 'family' | 'library' | 'library_name' | 'pipeline_tag' | 'cluster_id' | 'downloads' | 'likes' | 'family_depth' | 'trending_score' | 'licenses';
 export type SizeByOption = 'downloads' | 'likes' | 'none';
-export type ViewMode = 'scatter' | '3d' | 'network' | 'distribution';
+export type ViewMode = '3d' | 'network' | 'distribution';
 export type RenderingStyle = 'embeddings' | 'sphere' | 'galaxy' | 'wave' | 'helix' | 'torus';
 export type Theme = 'light' | 'dark';
 
-interface FilterState {
+export interface FilterState {
   // Filters
   domains: string[];
   licenses: string[];

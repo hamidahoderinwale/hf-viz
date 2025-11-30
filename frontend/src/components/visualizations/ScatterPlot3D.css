@@ -1,0 +1,24 @@
+.scatter-3d-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: visible;
+}
+
+.scatter-3d-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+}
+
+.scatter-3d-empty.dark {
+  color: #888;
+}
+
+.scatter-3d-empty.light {
+  color: #666;
+}
+

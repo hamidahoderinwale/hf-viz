@@ -696,6 +696,91 @@ async def get_family_stats():
     }
 
 
+@app.get("/api/family/top")
+async def get_top_families(
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of families to return"),
+    min_size: int = Query(2, ge=1, description="Minimum family size to include")
+):
+    """
+    Get top families by total lineage count (sum of all descendants).
+    Calculates the actual family tree size by traversing parent-child relationships.
+    """
+    if deps.df is None:
+        raise DataNotLoadedError()
+    
+    df = deps.df
+    
+    # Build parent -> children mapping
+    children_map = {}
+    root_models = set()
+    
+    for idx, row in df.iterrows():
+        model_id = str(row.get('model_id', ''))
+        parent_id = row.get('parent_model')
+        
+        if pd.isna(parent_id) or str(parent_id) == 'nan' or str(parent_id) == '':
+            root_models.add(model_id)
+        else:
+            parent_str = str(parent_id)
+            if parent_str not in children_map:
+                children_map[parent_str] = []
+            children_map[parent_str].append(model_id)
+    
+    # For each root, count all descendants
+    def count_descendants(model_id: str, visited: set) -> int:
+        if model_id in visited:
+            return 0
+        visited.add(model_id)
+        count = 1  # Count self
+        for child in children_map.get(model_id, []):
+            count += count_descendants(child, visited)
+        return count
+    
+    # Calculate family sizes
+    family_data = []
+    for root in root_models:
+        visited = set()
+        total_count = count_descendants(root, visited)
+        if total_count >= min_size:
+            # Get organization from model_id
+            org = root.split('/')[0] if '/' in root else root
+            family_data.append({
+                "root_model": root,
+                "organization": org,
+                "total_models": total_count,
+                "depth_count": len(visited)  # Same as total for tree traversal
+            })
+    
+    # Sort by total count descending
+    family_data.sort(key=lambda x: x['total_models'], reverse=True)
+    
+    # Also aggregate by organization (sum all families under same org)
+    org_totals = {}
+    for fam in family_data:
+        org = fam['organization']
+        if org not in org_totals:
+            org_totals[org] = {
+                "organization": org,
+                "total_models": 0,
+                "family_count": 0,
+                "root_models": []
+            }
+        org_totals[org]['total_models'] += fam['total_models']
+        org_totals[org]['family_count'] += 1
+        if len(org_totals[org]['root_models']) < 5:  # Keep top 5 root models
+            org_totals[org]['root_models'].append(fam['root_model'])
+    
+    # Sort organizations by total models
+    top_orgs = sorted(org_totals.values(), key=lambda x: x['total_models'], reverse=True)[:limit]
+    
+    return {
+        "families": family_data[:limit],
+        "organizations": top_orgs,
+        "total_families": len(family_data),
+        "total_root_models": len(root_models)
+    }
+
+
 @app.get("/api/family/path/{model_id}")
 async def get_family_path(
     model_id: str,
@@ -1026,6 +1111,118 @@ async def search_models(
         })
     
     return {"results": results, "search_type": "basic", "query": search_query}
+
+
+@app.get("/api/search/fuzzy")
+async def fuzzy_search_models(
+    q: str = Query(..., min_length=2, description="Search query"),
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of results"),
+    threshold: int = Query(60, ge=0, le=100, description="Minimum fuzzy match score (0-100)"),
+):
+    """
+    Fuzzy search for models using rapidfuzz.
+    Handles typos and partial matches across model names, libraries, and pipelines.
+    Returns results sorted by relevance score.
+    """
+    if deps.df is None:
+        raise DataNotLoadedError()
+    
+    df = deps.df
+    
+    try:
+        from rapidfuzz import fuzz, process
+        from rapidfuzz.utils import default_process
+        
+        query_lower = q.lower().strip()
+        
+        # Prepare choices - combine model_id, library, and pipeline for searching
+        # Create a searchable string for each model
+        model_ids = df['model_id'].astype(str).tolist()
+        libraries = df.get('library_name', pd.Series([''] * len(df))).fillna('').astype(str).tolist()
+        pipelines = df.get('pipeline_tag', pd.Series([''] * len(df))).fillna('').astype(str).tolist()
+        
+        # Create search strings - just model_id for better fuzzy matching
+        # Library and pipeline are used for secondary filtering
+        search_strings = [m.lower() for m in model_ids]
+        
+        # Use rapidfuzz to find best matches
+        # WRatio is best for general fuzzy matching with typo tolerance
+        # It handles transpositions, insertions, deletions well
+        
+        # extract returns list of (match, score, index)
+        matches = process.extract(
+            query_lower,
+            search_strings,
+            scorer=fuzz.WRatio,
+            limit=limit * 3,  # Get extra to filter by threshold and dedupe
+            score_cutoff=threshold,
+            processor=default_process
+        )
+        
+        # Also try partial matching for substring searches
+        if len(matches) < limit:
+            partial_matches = process.extract(
+                query_lower,
+                search_strings,
+                scorer=fuzz.partial_ratio,
+                limit=limit * 2,
+                score_cutoff=threshold + 10,  # Higher threshold for partial
+                processor=default_process
+            )
+            # Add unique partial matches
+            seen_indices = {m[2] for m in matches}
+            for m in partial_matches:
+                if m[2] not in seen_indices:
+                    matches.append(m)
+                    seen_indices.add(m[2])
+        
+        results = []
+        seen_ids = set()
+        
+        for match_str, score, idx in matches:
+            if len(results) >= limit:
+                break
+                
+            model_id = model_ids[idx]
+            if model_id in seen_ids:
+                continue
+            seen_ids.add(model_id)
+            
+            row = df.iloc[idx]
+            
+            # Get coordinates
+            x = float(row.get('x', 0.0)) if 'x' in row else None
+            y = float(row.get('y', 0.0)) if 'y' in row else None
+            z = float(row.get('z', 0.0)) if 'z' in row else None
+            
+            results.append({
+                "model_id": model_id,
+                "x": x,
+                "y": y,
+                "z": z,
+                "score": round(score, 1),
+                "library": row.get('library_name') if pd.notna(row.get('library_name')) else None,
+                "pipeline": row.get('pipeline_tag') if pd.notna(row.get('pipeline_tag')) else None,
+                "downloads": int(row.get('downloads', 0)),
+                "likes": int(row.get('likes', 0)),
+                "family_depth": int(row.get('family_depth', 0)) if pd.notna(row.get('family_depth')) else None,
+            })
+        
+        # Sort by score descending, then by downloads for tie-breaking
+        results.sort(key=lambda x: (-x['score'], -x['downloads']))
+        
+        return {
+            "results": results,
+            "query": q,
+            "total_matches": len(matches),
+            "threshold": threshold
+        }
+        
+    except ImportError:
+        raise HTTPException(status_code=500, detail="rapidfuzz not installed")
+    except Exception as e:
+        logger.exception(f"Fuzzy search error: {e}")
+        raise HTTPException(status_code=500, detail=f"Search error: {str(e)}")
 
 
 @app.get("/api/similar/{model_id}")
@@ -1937,6 +2134,168 @@ async def get_model_files(model_id: str, branch: str = Query("main")):
             status_code=500, 
             detail=f"Error fetching file tree: {str(e)}"
         )
+
+
+# =============================================================================
+# BACKGROUND COMPUTATION ENDPOINTS
+# =============================================================================
+
+import subprocess
+import threading
+
+# Store for background process
+_background_process = None
+_background_lock = threading.Lock()
+
+
+class ComputeRequest(BaseModel):
+    sample_size: Optional[int] = None
+    all_models: bool = False
+
+
+@app.get("/api/compute/status")
+async def get_compute_status():
+    """Get the status of background pre-computation."""
+    from pathlib import Path
+    
+    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    status_file = Path(root_dir) / "precomputed_data" / "background_status_v1.json"
+    
+    if status_file.exists():
+        import json
+        with open(status_file, 'r') as f:
+            status = json.load(f)
+        
+        # Check if process is still running
+        global _background_process
+        with _background_lock:
+            if _background_process is not None:
+                poll = _background_process.poll()
+                if poll is None:
+                    status['process_running'] = True
+                else:
+                    status['process_running'] = False
+                    status['process_exit_code'] = poll
+            else:
+                status['process_running'] = False
+        
+        return status
+    
+    # Check for existing precomputed data
+    metadata_file = Path(root_dir) / "precomputed_data" / "metadata_v1.json"
+    models_file = Path(root_dir) / "precomputed_data" / "models_v1.parquet"
+    
+    if metadata_file.exists() and models_file.exists():
+        import json
+        with open(metadata_file, 'r') as f:
+            metadata = json.load(f)
+        return {
+            'status': 'completed',
+            'total_models': metadata.get('total_models', 0),
+            'created_at': metadata.get('created_at'),
+            'process_running': False
+        }
+    
+    return {
+        'status': 'not_started',
+        'total_models': 0,
+        'process_running': False
+    }
+
+
+@app.post("/api/compute/start")
+async def start_background_compute(request: ComputeRequest, background_tasks: BackgroundTasks):
+    """Start background pre-computation of model embeddings."""
+    global _background_process
+    
+    with _background_lock:
+        if _background_process is not None and _background_process.poll() is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Background computation is already running"
+            )
+    
+    # Prepare command
+    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    script_path = os.path.join(root_dir, "backend", "scripts", "precompute_background.py")
+    venv_python = os.path.join(root_dir, "venv", "bin", "python")
+    
+    cmd = [venv_python, script_path]
+    
+    if request.all_models:
+        cmd.append("--all")
+    elif request.sample_size:
+        cmd.extend(["--sample-size", str(request.sample_size)])
+    else:
+        cmd.extend(["--sample-size", "150000"])  # Default
+    
+    cmd.extend(["--output-dir", os.path.join(root_dir, "precomputed_data")])
+    
+    # Start process in background
+    log_file = os.path.join(root_dir, "precompute_background.log")
+    
+    def run_computation():
+        global _background_process
+        with open(log_file, 'w') as f:
+            with _background_lock:
+                _background_process = subprocess.Popen(
+                    cmd,
+                    stdout=f,
+                    stderr=subprocess.STDOUT,
+                    cwd=os.path.join(root_dir, "backend")
+                )
+            _background_process.wait()
+    
+    thread = threading.Thread(target=run_computation, daemon=True)
+    thread.start()
+    
+    sample_desc = "all models" if request.all_models else f"{request.sample_size or 150000:,} models"
+    
+    return {
+        "message": f"Background computation started for {sample_desc}",
+        "status": "starting",
+        "log_file": log_file
+    }
+
+
+@app.post("/api/compute/stop")
+async def stop_background_compute():
+    """Stop the running background computation."""
+    global _background_process
+    
+    with _background_lock:
+        if _background_process is None or _background_process.poll() is not None:
+            return {"message": "No computation is running"}
+        
+        _background_process.terminate()
+        try:
+            _background_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _background_process.kill()
+        
+        return {"message": "Background computation stopped"}
+
+
+@app.get("/api/data/info")
+async def get_data_info():
+    """Get information about currently loaded data."""
+    df = deps.df
+    
+    if df is None:
+        return {
+            "loaded": False,
+            "message": "No data loaded"
+        }
+    
+    return {
+        "loaded": True,
+        "total_models": len(df),
+        "columns": list(df.columns),
+        "unique_libraries": int(df['library_name'].nunique()) if 'library_name' in df.columns else 0,
+        "unique_pipelines": int(df['pipeline_tag'].nunique()) if 'pipeline_tag' in df.columns else 0,
+        "has_3d_coords": all(col in df.columns for col in ['x_3d', 'y_3d', 'z_3d']),
+        "has_2d_coords": all(col in df.columns for col in ['x_2d', 'y_2d'])
+    }
 
 
 if __name__ == "__main__":

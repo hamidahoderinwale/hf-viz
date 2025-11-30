@@ -1,0 +1,71 @@
+/* ============================================
+   MODEL TOOLTIP
+   ============================================ */
+
+.model-tooltip {
+  position: fixed;
+  background: rgba(20, 20, 20, 0.98);
+  padding: 12px 16px;
+  font-size: 13px;
+  max-width: 350px;
+  z-index: 10000;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.model-tooltip-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #fff;
+}
+
+.model-tooltip-content {
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #d0d0d0;
+}
+
+.model-tooltip-row {
+  margin-bottom: 4px;
+}
+
+.model-tooltip-row-small {
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: #aaa;
+}
+
+.model-tooltip-label {
+  color: #888;
+}
+
+.model-tooltip-label-spaced {
+  color: #888;
+  margin-left: 8px;
+}
+
+.model-tooltip-loading {
+  font-size: 11px;
+  color: #888;
+  font-style: italic;
+  margin-top: 8px;
+}
+
+.model-tooltip-description {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 12px;
+  color: #e0e0e0;
+  line-height: 1.4;
+}
+
+.model-tooltip-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #888;
+  font-style: italic;
+}
+

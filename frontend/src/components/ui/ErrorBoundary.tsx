@@ -2,6 +2,7 @@
  * Error Boundary component to catch and display React errors gracefully
  */
 import React, { Component, ErrorInfo, ReactNode } from 'react';
+import './ErrorBoundary.css';
 
 interface Props {
   children: ReactNode;
@@ -33,11 +34,6 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // Log error to console in development
-    if (process.env.NODE_ENV === 'development') {
-      console.error('ErrorBoundary caught an error:', error, errorInfo);
-    }
-    
     this.setState({
       error,
       errorInfo,
@@ -59,52 +55,23 @@ class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <div
-          style={{
-            padding: '2rem',
-            margin: '2rem',
-            background: '#ffebee',
-            border: '1px solid #ffcdd2',
-            borderRadius: '0',
-            color: '#c62828',
-          }}
-        >
-          <h2 style={{ marginTop: 0 }}>Something went wrong</h2>
-          <p>
+        <div className="error-boundary-container">
+          <h2 className="error-boundary-title">Something went wrong</h2>
+          <p className="error-boundary-message">
             An error occurred while rendering this component. Please try refreshing the page.
           </p>
           {process.env.NODE_ENV === 'development' && this.state.error && (
-            <details style={{ marginTop: '1rem' }}>
-              <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>
+            <details className="error-boundary-details">
+              <summary className="error-boundary-summary">
                 Error Details (Development Only)
               </summary>
-              <pre
-                style={{
-                  marginTop: '0.5rem',
-                  padding: '1rem',
-                  background: '#fff',
-                  borderRadius: '0',
-                  overflow: 'auto',
-                  fontSize: '0.875rem',
-                }}
-              >
+              <pre className="error-boundary-stack">
                 {this.state.error.toString()}
                 {this.state.errorInfo?.componentStack}
               </pre>
             </details>
           )}
-          <button
-            onClick={this.handleReset}
-            style={{
-              marginTop: '1rem',
-              padding: '0.5rem 1rem',
-              background: '#4a4a4a',
-              color: 'white',
-              border: 'none',
-              borderRadius: '0',
-              cursor: 'pointer',
-            }}
-          >
+          <button className="error-boundary-reset-btn" onClick={this.handleReset}>
             Try Again
           </button>
         </div>
@@ -116,4 +83,3 @@ class ErrorBoundary extends Component<Props, State> {
 }
 
 export default ErrorBoundary;
-

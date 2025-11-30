@@ -12,11 +12,13 @@ Many have observed that the development and deployment of generative machine lea
 
 This interactive latent space navigator visualizes ~1.84M models from the [modelbiome/ai_ecosystem_withmodelcards](https://huggingface.co/datasets/modelbiome/ai_ecosystem_withmodelcards) dataset in a 2D space where similar models appear closer together, allowing you to explore the relationships and family structures described in the paper.
 
+![Demo](assets/demo.gif)
+
 **Resources:**
 - **GitHub Repository**: [bendlaufer/ai-ecosystem](https://github.com/bendlaufer/ai-ecosystem) - Original research repository with analysis notebooks and datasets
 - **Hugging Face Project**: [modelbiome](https://huggingface.co/modelbiome) - Dataset and project page on Hugging Face Hub
 
-## 🚀 Quick Start (New: Pre-Computed Data)
+## Quick Start (Pre-Computed Data)
 
 This project now uses **pre-computed embeddings and coordinates** for instant startup:
 
@@ -36,7 +38,7 @@ cd ../frontend
 npm install && npm start
 ```
 
-**Startup time:** ~5-10 seconds ⚡
+**Startup time:** ~5-10 seconds
 
 ### Option 2: Traditional Mode (Fallback)
 

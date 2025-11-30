@@ -1,7 +1,9 @@
 import React, { useMemo, useRef, useEffect, useState, useCallback } from 'react';
 import * as d3 from 'd3';
 import { ModelPoint } from '../../types';
+import MiniMap from './MiniMap';
 import './ScatterPlot.css';
+import './MiniMap.css';
 
 interface ScatterPlotProps {
   width: number;
@@ -36,8 +38,8 @@ export default function ScatterPlot({
 
   // Performance-optimized sampling with Level of Detail (LOD)
   const sampledData = useMemo(() => {
-    // Reduced render limit for better performance (was 25000)
-    const renderLimit = 10000;
+    // Increased render limit to support full dataset (using Canvas for performance)
+    const renderLimit = 150000;
     
     // LOD: Reduce further when zoomed out
     const lodFactor = transform.k < 1 ? 0.5 : 1; // Show 50% when zoomed out
@@ -156,6 +158,17 @@ export default function ScatterPlot({
     }
   }, []);
 
+  // Handler for mini-map viewport changes
+  const handleMiniMapViewportChange = useCallback((newTransform: d3.ZoomTransform) => {
+    if (svgRef.current && zoomRef.current) {
+      d3.select(svgRef.current)
+        .transition()
+        .duration(300)
+        .ease(d3.easeCubicOut)
+        .call(zoomRef.current.transform as any, newTransform);
+    }
+  }, []);
+
   // Debounced tooltip update
   const showTooltip = useCallback((d: ModelPoint, x: number, y: number) => {
     if (!gRef.current) return;
@@ -177,7 +190,7 @@ export default function ScatterPlot({
       { text: d.model_id.length > 35 ? d.model_id.substring(0, 35) + '...' : d.model_id, bold: true },
       { text: `Library: ${d.library_name || 'N/A'}` },
       { text: `Pipeline: ${d.pipeline_tag || 'N/A'}` },
-      { text: `↓ ${d.downloads.toLocaleString()} | ♥ ${d.likes.toLocaleString()}` },
+      { text: `Downloads: ${d.downloads.toLocaleString()} | Likes: ${d.likes.toLocaleString()}` },
       { text: 'Click for details', small: true }
     ];
 
@@ -553,6 +566,21 @@ export default function ScatterPlot({
           Showing {sampledData.length.toLocaleString()} of {data.length.toLocaleString()} points
         </div>
       )}
+      
+      {/* Mini-map / Overview Map */}
+      <MiniMap
+        width={180}
+        height={140}
+        data={data}
+        colorBy={colorBy}
+        mainWidth={width}
+        mainHeight={height}
+        mainMargin={margin}
+        transform={transform}
+        onViewportChange={handleMiniMapViewportChange}
+        xScaleBase={xScaleBase}
+        yScaleBase={yScaleBase}
+      />
     </div>
   );
 }

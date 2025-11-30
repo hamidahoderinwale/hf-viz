@@ -14,7 +14,6 @@ interface ModeOption {
 }
 
 const MODES: ModeOption[] = [
-  { value: 'scatter', label: '2D Scatter', icon: '', description: '2D projection view' },
   { value: 'network', label: 'Network', icon: '', description: 'Network graph view' },
   { value: 'distribution', label: 'Distribution', icon: '', description: 'Statistical distributions' },
 ];
