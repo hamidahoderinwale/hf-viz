@@ -1,11 +1,11 @@
 /* ============================================
-   INTRO MODAL - TOP LEFT ONBOARDING
+   INTRO MODAL - TOP RIGHT ONBOARDING
    ============================================ */
 
 .intro-modal {
   position: absolute;
   top: 60px;
-  left: 20px;
+  right: 20px;
   width: 280px;
   background: var(--bg-elevated, rgba(22, 27, 34, 0.98));
   border: 1px solid var(--border-medium);
