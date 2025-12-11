@@ -10,6 +10,7 @@ import LiveModelCounter from './components/ui/LiveModelCounter';
 import ModelPopup from './components/ui/ModelPopup';
 import AnalyticsPage from './pages/AnalyticsPage';
 import FamiliesPage from './pages/FamiliesPage';
+import GraphPage from './pages/GraphPage';
 // Types & Utils
 import { ModelPoint, Stats, SearchResult } from './types';
 import IntegratedSearch from './components/controls/IntegratedSearch';
@@ -82,6 +83,8 @@ function App() {
   const [semanticQueryModel] = useState<string | null>(null);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showFamilies, setShowFamilies] = useState(false);
+  const [showGraph, setShowGraph] = useState(false);
+  const [showAllModels, setShowAllModels] = useState(false);
   
   const [, setSearchResults] = useState<SearchResult[]>([]);
   const [searchInput] = useState('');
@@ -195,8 +198,15 @@ function App() {
           params.append('search_query', searchQuery);
         }
         
-        // Request up to 150k models for scatter plots, limit network graph for performance
-        params.append('max_points', viewMode === 'network' ? '500' : '150000');
+        // Request models - either all or sampled
+        if (showAllModels) {
+          // Request all models (backend will handle if too many)
+          // Use a very large number to effectively mean "all"
+          params.append('max_points', '10000000'); // Effectively unlimited
+        } else {
+          // Request up to 150k models for scatter plots (sampled), limit network graph for performance
+          params.append('max_points', viewMode === 'network' ? '500' : '150000');
+        }
         // Add format parameter for MessagePack support
         params.append('format', 'msgpack');
 
@@ -270,7 +280,7 @@ function App() {
       setLoading(false);
       fetchDataAbortRef.current = null;
     }
-  }, [minDownloads, minLikes, searchQuery, projectionMethod, baseModelsOnly, semanticSimilarityMode, semanticQueryModel, useGraphEmbeddings, selectedClusters, viewMode]);
+  }, [minDownloads, minLikes, searchQuery, projectionMethod, baseModelsOnly, semanticSimilarityMode, semanticQueryModel, useGraphEmbeddings, selectedClusters, viewMode, showAllModels]);
 
   // Debounce times for different control types
   const SLIDER_DEBOUNCE_MS = 500; // Sliders need longer debounce
@@ -524,8 +534,9 @@ function App() {
                 onClick={() => {
                   setShowAnalytics(false);
                   setShowFamilies(false);
+                  setShowGraph(false);
                 }}
-                className={`nav-tab ${!showAnalytics && !showFamilies ? 'active' : ''}`}
+                className={`nav-tab ${!showAnalytics && !showFamilies && !showGraph ? 'active' : ''}`}
                 title="3D scatter plot of model embeddings — explore the model space interactively"
               >
                 Visualization
@@ -534,6 +545,7 @@ function App() {
                 onClick={() => {
                   setShowAnalytics(false);
                   setShowFamilies(true);
+                  setShowGraph(false);
                 }}
                 className={`nav-tab ${showFamilies ? 'active' : ''}`}
                 title="Browse model families and their lineage trees"
@@ -543,6 +555,18 @@ function App() {
               <button
                 onClick={() => {
                   setShowFamilies(false);
+                  setShowAnalytics(false);
+                  setShowGraph(true);
+                }}
+                className={`nav-tab ${showGraph ? 'active' : ''}`}
+                title="Force-directed graph showing model relationships and derivatives"
+              >
+                Graph
+              </button>
+              <button
+                onClick={() => {
+                  setShowFamilies(false);
+                  setShowGraph(false);
                   setShowAnalytics(true);
                 }}
                 className={`nav-tab ${showAnalytics ? 'active' : ''}`}
@@ -570,6 +594,8 @@ function App() {
               <AnalyticsPage />
             ) : showFamilies ? (
               <FamiliesPage />
+            ) : showGraph ? (
+              <GraphPage />
             ) : (
       <div className="visualization-layout">
         <div className="control-bar">
@@ -639,6 +665,26 @@ function App() {
                 <span className="control-stats-text">
                   {data.length.toLocaleString()} models
                 </span>
+              </div>
+
+              <span className="control-divider" />
+
+              {/* Show All Models Toggle */}
+              <div className="control-group">
+                <label className="control-toggle" title="Show all models (no sampling). When disabled, shows up to 150k models sampled proportionally by library, prioritizing base models and popular models.">
+                  <input
+                    type="checkbox"
+                    checked={showAllModels}
+                    onChange={(e) => setShowAllModels(e.target.checked)}
+                    className="control-checkbox"
+                  />
+                  <span className="control-toggle-label">Show All Models</span>
+                </label>
+                {!showAllModels && (
+                  <span className="control-info" title="Sampling strategy: Includes all base models, then adds popular derived models and diverse samples across libraries proportionally. Max 150k models for performance.">
+                    (Sampled)
+                  </span>
+                )}
               </div>
 
             </div>

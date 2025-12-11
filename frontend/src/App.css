@@ -630,6 +630,34 @@
     font-weight: 500;
   }
 
+  .control-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .control-checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--accent-blue);
+  }
+
+  .control-toggle-label {
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+  }
+
+  .control-info {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    font-style: italic;
+    margin-left: 0.25rem;
+  }
+
   .control-btn {
     padding: 0.35rem 0.75rem;
     border: 1px solid var(--border-medium);

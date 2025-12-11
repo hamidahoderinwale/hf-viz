@@ -1,0 +1,145 @@
+.force-directed-graph-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-secondary, #1a1a1a);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.force-directed-graph {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.force-directed-graph .links line {
+  transition: stroke-opacity 0.2s, stroke-width 0.2s;
+}
+
+.force-directed-graph .nodes circle {
+  transition: stroke-width 0.2s, r 0.2s;
+}
+
+.force-directed-graph .nodes circle:hover {
+  filter: brightness(1.2);
+}
+
+.force-directed-graph .labels text {
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Edge type legend */
+.edge-type-legend {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: var(--bg-primary, #0a0a0a);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 12px;
+  z-index: 10;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.edge-type-legend h4 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #fff);
+}
+
+.edge-type-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.edge-type-item:hover {
+  background-color: var(--bg-secondary, #2a2a2a);
+}
+
+.edge-type-item:last-child {
+  margin-bottom: 0;
+}
+
+.edge-type-color {
+  width: 20px;
+  height: 3px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.edge-type-label {
+  flex: 1;
+  color: var(--text-secondary, #ccc);
+  text-transform: capitalize;
+}
+
+.edge-type-item.disabled .edge-type-color {
+  opacity: 0.3;
+}
+
+.edge-type-item.disabled .edge-type-label {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+/* Graph controls */
+.graph-controls {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  display: flex;
+  gap: 8px;
+  z-index: 10;
+}
+
+.graph-control-btn {
+  background: var(--bg-primary, #0a0a0a);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: var(--text-primary, #fff);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.graph-control-btn:hover {
+  background: var(--bg-secondary, #2a2a2a);
+  border-color: var(--border-hover, #555);
+}
+
+.graph-control-btn:active {
+  transform: scale(0.95);
+}
+
+/* Loading state */
+.graph-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-secondary, #999);
+  font-size: 14px;
+}
+
+/* Empty state */
+.graph-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-secondary, #999);
+  font-size: 14px;
+}

@@ -360,20 +360,23 @@ async def get_models(
             "returned_count": 0
         }
     
-    if max_points is not None and len(filtered_df) > max_points:
+    # Handle max_points: None means no limit, very large number also means no limit
+    effective_max_points = None if max_points is None or max_points >= 1000000 else max_points
+    
+    if effective_max_points is not None and len(filtered_df) > effective_max_points:
         if 'library_name' in filtered_df.columns and filtered_df['library_name'].notna().any():
             # Sample proportionally by library, preserving all columns
             sampled_dfs = []
             for lib_name, group in filtered_df.groupby('library_name', group_keys=False):
-                n_samples = max(1, int(max_points * len(group) / len(filtered_df)))
+                n_samples = max(1, int(effective_max_points * len(group) / len(filtered_df)))
                 sampled_dfs.append(group.sample(min(len(group), n_samples), random_state=42))
             filtered_df = pd.concat(sampled_dfs, ignore_index=True)
-            if len(filtered_df) > max_points:
-                filtered_df = filtered_df.sample(n=max_points, random_state=42).reset_index(drop=True)
+            if len(filtered_df) > effective_max_points:
+                filtered_df = filtered_df.sample(n=effective_max_points, random_state=42).reset_index(drop=True)
             else:
                 filtered_df = filtered_df.reset_index(drop=True)
         else:
-            filtered_df = filtered_df.sample(n=max_points, random_state=42).reset_index(drop=True)
+            filtered_df = filtered_df.sample(n=effective_max_points, random_state=42).reset_index(drop=True)
     
     # Determine which embeddings to use
     if use_graph_embeddings and combined_embeddings is not None:
