@@ -1629,15 +1629,18 @@ async def get_full_derivative_network(
         raise DataNotLoadedError()
     
     try:
+        logger.info(f"Building full derivative network for {len(df):,} models...")
         filter_types = None
         if edge_types:
             filter_types = [t.strip() for t in edge_types.split(',') if t.strip()]
         
         network_builder = ModelNetworkBuilder(df)
+        logger.info("Calling build_full_derivative_network...")
         graph = network_builder.build_full_derivative_network(
             include_edge_attributes=include_edge_attributes,
             filter_edge_types=filter_types
         )
+        logger.info(f"Graph built: {graph.number_of_nodes():,} nodes, {graph.number_of_edges():,} edges")
         
         nodes = []
         for node_id, attrs in graph.nodes(data=True):
@@ -1650,6 +1653,8 @@ async def get_full_derivative_network(
                 "library": attrs.get('library', ''),
                 "pipeline": attrs.get('pipeline', '')
             })
+        
+        logger.info(f"Processed {len(nodes):,} nodes")
         
         links = []
         for source, target, edge_attrs in graph.edges(data=True):
@@ -1671,16 +1676,22 @@ async def get_full_derivative_network(
             
             links.append(link_data)
         
+        logger.info(f"Processed {len(links):,} links")
+        
         stats = network_builder.get_network_statistics(graph)
+        logger.info("Full derivative network built successfully")
         
         return {
             "nodes": nodes,
             "links": links,
             "statistics": stats
         }
-    except (ValueError, KeyError, AttributeError) as e:
+    except Exception as e:
         logger.error(f"Error building full derivative network: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error building full derivative network: {str(e)}")
+        error_detail = f"Error building full derivative network: {str(e)}"
+        if isinstance(e, (ValueError, KeyError, AttributeError)):
+            error_detail += f" (Type: {type(e).__name__})"
+        raise HTTPException(status_code=500, detail=error_detail)
 
 
 @app.get("/api/search/neighbors/{model_id}")

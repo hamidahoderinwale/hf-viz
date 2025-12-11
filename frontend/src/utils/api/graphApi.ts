@@ -80,9 +80,24 @@ export async function fetchFullDerivativeNetwork(
 
   const url = `${API_BASE}/api/network/full-derivatives${params.toString() ? '?' + params.toString() : ''}`;
   
-  const response = await fetch(url);
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch (error: any) {
+    throw new Error(`Network error: ${error.message || 'Failed to connect to server'}`);
+  }
+  
   if (!response.ok) {
-    throw new Error(`Failed to fetch full derivative network: ${response.statusText}`);
+    let errorMessage = `Failed to fetch full derivative network: ${response.statusText}`;
+    try {
+      const errorData = await response.json();
+      if (errorData.detail) {
+        errorMessage = errorData.detail;
+      }
+    } catch {
+      // If response is not JSON, use status text
+    }
+    throw new Error(errorMessage);
   }
 
   const data = await response.json();

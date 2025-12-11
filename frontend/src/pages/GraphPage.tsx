@@ -82,7 +82,9 @@ export default function GraphPage() {
           }
         }
       } catch (err: any) {
-        setError(err.message || 'Failed to load graph');
+        const errorMessage = err.message || 'Failed to load graph';
+        console.error('Error loading graph:', err);
+        setError(errorMessage);
         setNodes([]);
         setLinks([]);
         setEmbeddingData([]);
