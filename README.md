@@ -1,3 +1,13 @@
+---
+title: HF Model Ecosystem Visualizer
+emoji: 🌐
+colorFrom: blue
+colorTo: purple
+sdk: docker
+pinned: false
+license: mit
+---
+
 # Anatomy of a Machine Learning Ecosystem: 2 Million Models on Hugging Face
 
 **Authors:** Benjamin Laufer, Hamidah Oderinwale, Jon Kleinberg
@@ -14,7 +24,6 @@ Many have observed that the development and deployment of generative machine lea
 
 This interactive latent space navigator visualizes ~1.84M models from the [modelbiome/ai_ecosystem_withmodelcards](https://huggingface.co/datasets/modelbiome/ai_ecosystem_withmodelcards) dataset in a 2D space where similar models appear closer together, allowing you to explore the relationships and family structures described in the paper.
 
-![Demo](assets/demo.gif)
 
 **Resources:**
 - **GitHub Repository**: [bendlaufer/ai-ecosystem](https://github.com/bendlaufer/ai-ecosystem) - Original research repository with analysis notebooks and datasets
