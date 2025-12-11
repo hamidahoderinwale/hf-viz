@@ -36,6 +36,7 @@ COPY --from=frontend-builder --chown=user /frontend/build /app/frontend/build
 RUN mkdir -p /app/precomputed_data /app/cache && chown -R user:user /app/precomputed_data /app/cache
 
 # Copy precomputed data if available (metadata only in repo)
+# Ensure precomputed_data/ contains at least one file (metadata_v1.json or .gitkeep) for COPY to succeed
 COPY --chown=user precomputed_data/ /app/precomputed_data/
 
 # Switch to non-root user
