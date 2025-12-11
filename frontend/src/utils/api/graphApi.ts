@@ -60,6 +60,43 @@ export async function fetchFamilyNetwork(
 }
 
 /**
+ * Fetch full derivative network graph for ALL models in the database
+ */
+export async function fetchFullDerivativeNetwork(
+  options: {
+    edgeTypes?: EdgeType[];
+    includeEdgeAttributes?: boolean;
+  } = {}
+): Promise<NetworkGraphResponse> {
+  const { edgeTypes, includeEdgeAttributes = true } = options;
+
+  const params = new URLSearchParams();
+  if (edgeTypes && edgeTypes.length > 0) {
+    params.append('edge_types', edgeTypes.join(','));
+  }
+  if (includeEdgeAttributes !== undefined) {
+    params.append('include_edge_attributes', includeEdgeAttributes.toString());
+  }
+
+  const url = `${API_BASE}/api/network/full-derivatives${params.toString() ? '?' + params.toString() : ''}`;
+  
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch full derivative network: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  
+  // Transform the response to match our types
+  return {
+    nodes: data.nodes || [],
+    links: data.links || [],
+    statistics: data.statistics,
+    root_model: '', // No root model for full network
+  };
+}
+
+/**
  * Get all available edge types from a graph response
  */
 export function getAvailableEdgeTypes(links: GraphLink[]): Set<EdgeType> {

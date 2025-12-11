@@ -435,6 +435,66 @@ class ModelNetworkBuilder:
         all_model_ids = self.df.index.tolist()
         return self.build_cooccurrence_network(all_model_ids, cooccurrence_method)
     
+    def build_full_derivative_network(
+        self,
+        include_edge_attributes: bool = True,
+        filter_edge_types: Optional[List[str]] = None
+    ) -> nx.DiGraph:
+        """
+        Build a full derivative relationship network for ALL models in the dataset.
+        This creates a directed graph showing all parent-child relationships with edge types.
+        
+        Args:
+            include_edge_attributes: Whether to calculate edge attributes (change in likes, downloads, etc.)
+            filter_edge_types: List of edge types to include (e.g., ['finetune', 'quantized']). 
+                              If None, includes all types.
+            
+        Returns:
+            NetworkX DiGraph representing all derivative relationships in the dataset
+        """
+        graph = nx.DiGraph()
+        
+        # Add all models as nodes first
+        for idx, row in self.df.iterrows():
+            model_id = str(row.get('model_id', idx))
+            graph.add_node(model_id)
+            graph.nodes[model_id]['title'] = self._format_title(model_id)
+            graph.nodes[model_id]['freq'] = int(row.get('downloads', 0))
+            graph.nodes[model_id]['likes'] = int(row.get('likes', 0))
+            graph.nodes[model_id]['downloads'] = int(row.get('downloads', 0))
+            graph.nodes[model_id]['library'] = str(row.get('library_name', '')) if pd.notna(row.get('library_name')) else ''
+            graph.nodes[model_id]['pipeline'] = str(row.get('pipeline_tag', '')) if pd.notna(row.get('pipeline_tag')) else ''
+            
+            createdAt = row.get('createdAt')
+            if pd.notna(createdAt):
+                graph.nodes[model_id]['createdAt'] = str(createdAt)
+        
+        # Add all derivative relationship edges
+        for idx, row in self.df.iterrows():
+            model_id = str(row.get('model_id', idx))
+            all_parents = _get_all_parents(row)
+            
+            for rel_type, parent_list in all_parents.items():
+                if filter_edge_types and rel_type not in filter_edge_types:
+                    continue
+                
+                for parent_id in parent_list:
+                    # Only add edge if parent exists in the dataset
+                    if parent_id in graph:
+                        if not graph.has_edge(parent_id, model_id):
+                            graph.add_edge(parent_id, model_id)
+                            graph[parent_id][model_id]['edge_types'] = [rel_type]
+                            graph[parent_id][model_id]['edge_type'] = rel_type
+                        else:
+                            # Multiple relationship types between same nodes
+                            if rel_type not in graph[parent_id][model_id].get('edge_types', []):
+                                graph[parent_id][model_id]['edge_types'].append(rel_type)
+        
+        if include_edge_attributes:
+            self._add_edge_attributes(graph)
+        
+        return graph
+    
     def find_neighbors(
         self,
         model_id: str,

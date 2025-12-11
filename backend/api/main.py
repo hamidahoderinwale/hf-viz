@@ -1614,6 +1614,75 @@ async def get_family_network(
         raise HTTPException(status_code=500, detail=f"Error building family network: {str(e)}")
 
 
+@app.get("/api/network/full-derivatives")
+@cached_response(ttl=3600, key_prefix="full_derivatives_network")
+async def get_full_derivative_network(
+    edge_types: Optional[str] = Query(None, description="Comma-separated list of edge types to include (finetune,quantized,adapter,merge,parent). If None, includes all types."),
+    include_edge_attributes: bool = Query(True, description="Whether to include edge attributes (change in likes, downloads, etc.)")
+):
+    """
+    Build full derivative relationship network for ALL models in the database.
+    Returns a non-embedding based force-directed graph where edges represent derivative types.
+    This computes over every single model in the database.
+    """
+    if df is None:
+        raise DataNotLoadedError()
+    
+    try:
+        filter_types = None
+        if edge_types:
+            filter_types = [t.strip() for t in edge_types.split(',') if t.strip()]
+        
+        network_builder = ModelNetworkBuilder(df)
+        graph = network_builder.build_full_derivative_network(
+            include_edge_attributes=include_edge_attributes,
+            filter_edge_types=filter_types
+        )
+        
+        nodes = []
+        for node_id, attrs in graph.nodes(data=True):
+            nodes.append({
+                "id": node_id,
+                "title": attrs.get('title', node_id),
+                "freq": attrs.get('freq', 0),
+                "likes": attrs.get('likes', 0),
+                "downloads": attrs.get('downloads', 0),
+                "library": attrs.get('library', ''),
+                "pipeline": attrs.get('pipeline', '')
+            })
+        
+        links = []
+        for source, target, edge_attrs in graph.edges(data=True):
+            link_data = {
+                "source": source,
+                "target": target,
+                "edge_type": edge_attrs.get('edge_type'),
+                "edge_types": edge_attrs.get('edge_types', [])
+            }
+            
+            if include_edge_attributes:
+                link_data.update({
+                    "change_in_likes": edge_attrs.get('change_in_likes'),
+                    "percentage_change_in_likes": edge_attrs.get('percentage_change_in_likes'),
+                    "change_in_downloads": edge_attrs.get('change_in_downloads'),
+                    "percentage_change_in_downloads": edge_attrs.get('percentage_change_in_downloads'),
+                    "change_in_createdAt_days": edge_attrs.get('change_in_createdAt_days')
+                })
+            
+            links.append(link_data)
+        
+        stats = network_builder.get_network_statistics(graph)
+        
+        return {
+            "nodes": nodes,
+            "links": links,
+            "statistics": stats
+        }
+    except (ValueError, KeyError, AttributeError) as e:
+        logger.error(f"Error building full derivative network: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error building full derivative network: {str(e)}")
+
+
 @app.get("/api/search/neighbors/{model_id}")
 async def get_model_neighbors(
     model_id: str,

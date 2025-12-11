@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ForceDirectedGraph, { EdgeType, GraphNode } from '../components/visualizations/ForceDirectedGraph';
+import ForceDirectedGraph3D from '../components/visualizations/ForceDirectedGraph3D';
 import ScatterPlot3D from '../components/visualizations/ScatterPlot3D';
-import { fetchFamilyNetwork, getAvailableEdgeTypes } from '../utils/api/graphApi';
+import { fetchFamilyNetwork, fetchFullDerivativeNetwork, getAvailableEdgeTypes } from '../utils/api/graphApi';
 import LoadingProgress from '../components/ui/LoadingProgress';
 import { ModelPoint } from '../types';
 // Simple search input for graph page
@@ -10,11 +11,13 @@ import './GraphPage.css';
 
 const ALL_EDGE_TYPES: EdgeType[] = ['finetune', 'quantized', 'adapter', 'merge', 'parent'];
 
-type ViewMode = 'graph' | 'embedding';
+type ViewMode = 'graph' | 'embedding' | 'graph3d';
+type GraphMode = 'family' | 'full';
 
 export default function GraphPage() {
   const [modelId, setModelId] = useState<string>('');
-  const [viewMode, setViewMode] = useState<ViewMode>('graph');
+  const [viewMode, setViewMode] = useState<ViewMode>('graph3d');
+  const [graphMode, setGraphMode] = useState<GraphMode>('full');
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const [links, setLinks] = useState<any[]>([]);
   const [embeddingData, setEmbeddingData] = useState<ModelPoint[]>([]);
@@ -33,26 +36,37 @@ export default function GraphPage() {
   const [colorBy, setColorBy] = useState<string>('library_name');
   const [sizeBy, setSizeBy] = useState<string>('downloads');
 
-  // Load graph when modelId or maxDepth changes
+  // Load graph when modelId, maxDepth, or graphMode changes
   useEffect(() => {
-    if (!modelId.trim()) {
-      setNodes([]);
-      setLinks([]);
-      setEmbeddingData([]);
-      setGraphStats(null);
-      return;
-    }
-
     const loadGraph = async () => {
       setLoading(true);
       setError(null);
       try {
-        // Load all edge types initially, filtering happens client-side
-        const data = await fetchFamilyNetwork(modelId, {
-          maxDepth,
-          edgeTypes: undefined, // Get all types, filter client-side
-          includeEdgeAttributes: true,
-        });
+        let data;
+        
+        if (graphMode === 'full') {
+          // Load full derivative network for all models
+          data = await fetchFullDerivativeNetwork({
+            edgeTypes: undefined, // Get all types, filter client-side
+            includeEdgeAttributes: true,
+          });
+        } else {
+          // Load family network for specific model
+          if (!modelId.trim()) {
+            setNodes([]);
+            setLinks([]);
+            setEmbeddingData([]);
+            setGraphStats(null);
+            setLoading(false);
+            return;
+          }
+          
+          data = await fetchFamilyNetwork(modelId, {
+            maxDepth,
+            edgeTypes: undefined, // Get all types, filter client-side
+            includeEdgeAttributes: true,
+          });
+        }
 
         setNodes(data.nodes || []);
         setLinks(data.links || []);
@@ -77,7 +91,7 @@ export default function GraphPage() {
     };
 
     loadGraph();
-  }, [modelId, maxDepth, enabledEdgeTypes]); // Only reload when modelId or maxDepth changes
+  }, [modelId, maxDepth, graphMode]); // Reload when modelId, maxDepth, or graphMode changes
 
   // Load embedding data when switching to embedding view or when nodes change
   useEffect(() => {
@@ -229,7 +243,8 @@ export default function GraphPage() {
       <div className="page-header">
         <h1>Model Relationship Graph</h1>
         <p className="page-description">
-          Visualize model derivatives and relationships. Switch between force-directed graph view and embedding space view.
+          Visualize model derivatives and relationships. Choose between family tree view (single model) or full network view (all models).
+          Switch between 2D/3D force-directed graph views and embedding space view.
           Explore how models are connected through fine-tuning, quantization, adapters, and merges.
         </p>
       </div>
@@ -280,13 +295,31 @@ export default function GraphPage() {
 
         <div className="graph-settings">
           <div className="setting-group">
+            <label>Graph Mode:</label>
+            <select
+              value={graphMode}
+              onChange={(e) => {
+                setGraphMode(e.target.value as GraphMode);
+                if (e.target.value === 'full') {
+                  setViewMode('graph3d'); // Default to 3D for full graph
+                }
+              }}
+              className="graph-mode-select"
+            >
+              <option value="family">Family Tree (Single Model)</option>
+              <option value="full">Full Network (All Models)</option>
+            </select>
+          </div>
+
+          <div className="setting-group">
             <label>View Mode:</label>
             <select
               value={viewMode}
               onChange={(e) => setViewMode(e.target.value as ViewMode)}
               className="view-mode-select"
             >
-              <option value="graph">Force-Directed Graph</option>
+              <option value="graph">Force-Directed Graph (2D)</option>
+              <option value="graph3d">Force-Directed Graph (3D)</option>
               <option value="embedding">Embedding Space (3D)</option>
             </select>
           </div>
@@ -323,22 +356,26 @@ export default function GraphPage() {
             </>
           )}
 
-          <div className="setting-group">
-            <label>Max Depth:</label>
-            <input
-              type="number"
-              min="1"
-              max="20"
-              value={maxDepth || ''}
-              onChange={(e) => setMaxDepth(e.target.value ? parseInt(e.target.value) : undefined)}
-              className="depth-input"
-            />
-          </div>
+          {graphMode === 'family' && (
+            <div className="setting-group">
+              <label>Max Depth:</label>
+              <input
+                type="number"
+                min="1"
+                max="20"
+                value={maxDepth || ''}
+                onChange={(e) => setMaxDepth(e.target.value ? parseInt(e.target.value) : undefined)}
+                className="depth-input"
+              />
+            </div>
+          )}
 
-          <div className="setting-group">
-            <label>Current Model:</label>
-            <div className="current-model">{modelId || 'None selected'}</div>
-          </div>
+          {graphMode === 'family' && (
+            <div className="setting-group">
+              <label>Current Model:</label>
+              <div className="current-model">{modelId || 'None selected'}</div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -354,10 +391,16 @@ export default function GraphPage() {
           </div>
         ) : nodes.length === 0 ? (
           <div className="graph-empty">
-            <p>Enter a model ID above to visualize its relationship graph.</p>
-            <p className="empty-hint">
-              Try popular models like: <code>bert-base-uncased</code>, <code>gpt2</code>, or <code>t5-base</code>
-            </p>
+            {graphMode === 'full' ? (
+              <p>Loading full derivative network for all models...</p>
+            ) : (
+              <>
+                <p>Enter a model ID above to visualize its relationship graph.</p>
+                <p className="empty-hint">
+                  Try popular models like: <code>bert-base-uncased</code>, <code>gpt2</code>, or <code>t5-base</code>
+                </p>
+              </>
+            )}
           </div>
         ) : viewMode === 'graph' ? (
           <>
@@ -371,6 +414,44 @@ export default function GraphPage() {
               enabledEdgeTypes={enabledEdgeTypes}
               showLabels={true}
             />
+            <EdgeTypeLegend
+              edgeTypes={ALL_EDGE_TYPES}
+              enabledTypes={enabledEdgeTypes}
+              onToggle={toggleEdgeType}
+            />
+            {graphStats && (
+              <div className="graph-stats">
+                <div className="stat-item">
+                  <span className="stat-label">Nodes:</span>
+                  <span className="stat-value">{graphStats.nodes || nodes.length}</span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-label">Edges:</span>
+                  <span className="stat-value">{graphStats.edges || links.length}</span>
+                </div>
+                {graphStats.avg_degree && (
+                  <div className="stat-item">
+                    <span className="stat-label">Avg Degree:</span>
+                    <span className="stat-value">{graphStats.avg_degree.toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        ) : viewMode === 'graph3d' ? (
+          <>
+            <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+              <ForceDirectedGraph3D
+                width={dimensions.width}
+                height={dimensions.height}
+                nodes={nodes}
+                links={links}
+                onNodeClick={handleNodeClick}
+                selectedNodeId={selectedNodeId}
+                enabledEdgeTypes={enabledEdgeTypes}
+                showLabels={true}
+              />
+            </div>
             <EdgeTypeLegend
               edgeTypes={ALL_EDGE_TYPES}
               enabledTypes={enabledEdgeTypes}
