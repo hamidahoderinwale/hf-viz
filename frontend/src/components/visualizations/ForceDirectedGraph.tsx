@@ -18,8 +18,10 @@ export interface GraphNode {
   pipeline: string;
   x?: number;
   y?: number;
+  z?: number;
   fx?: number | null;
   fy?: number | null;
+  fz?: number | null;
 }
 
 export interface GraphLink {

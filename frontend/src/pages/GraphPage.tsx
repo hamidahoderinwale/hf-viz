@@ -93,6 +93,7 @@ export default function GraphPage() {
 
     // Always load graph - for full mode it loads immediately, for family mode it waits for modelId
     loadGraph();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelId, maxDepth, graphMode]); // Reload when modelId, maxDepth, or graphMode changes
 
   // Load embedding data when switching to embedding view

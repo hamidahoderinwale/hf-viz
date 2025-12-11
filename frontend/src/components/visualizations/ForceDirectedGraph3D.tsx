@@ -4,7 +4,7 @@
  * with color-coded edges and interactive nodes in 3D space.
  */
 import React, { useMemo, useRef, useEffect, useState, useCallback } from 'react';
-import { Canvas, useThree, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { GraphNode, GraphLink, EdgeType } from './ForceDirectedGraph';
@@ -44,7 +44,7 @@ class ForceSimulation3D {
   private nodes: GraphNode[];
   private links: GraphLink[];
   private velocities: Map<string, THREE.Vector3>;
-  private alpha: number;
+  public alpha: number;
   private alphaTarget: number;
   private alphaDecay: number;
 
@@ -245,7 +245,6 @@ function Graph3DScene({
   const simulationRef = useRef<ForceSimulation3D | null>(null);
   const edgeRefsRef = useRef<Map<string, THREE.BufferGeometry>>(new Map());
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-  const { raycaster, camera, gl } = useThree();
 
   // Filter links based on enabled edge types
   const filteredLinks = useMemo((): GraphLink[] => {
@@ -330,41 +329,6 @@ function Graph3DScene({
     }
   }, [onNodeClick]);
 
-  // Calculate bounds for camera
-  const bounds = useMemo(() => {
-    if (filteredNodes.length === 0) {
-      return { center: [0, 0, 0], radius: 100 };
-    }
-
-    let minX = Infinity, maxX = -Infinity;
-    let minY = Infinity, maxY = -Infinity;
-    let minZ = Infinity, maxZ = -Infinity;
-
-    filteredNodes.forEach(node => {
-      const x = node.x || 0;
-      const y = node.y || 0;
-      const z = node.z || 0;
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x);
-      minY = Math.min(minY, y);
-      maxY = Math.max(maxY, y);
-      minZ = Math.min(minZ, z);
-      maxZ = Math.max(maxZ, z);
-    });
-
-    const center: [number, number, number] = [
-      (minX + maxX) / 2,
-      (minY + maxY) / 2,
-      (minZ + maxZ) / 2,
-    ];
-    const radius = Math.max(
-      maxX - minX,
-      maxY - minY,
-      maxZ - minZ
-    ) / 2 || 100;
-
-    return { center, radius };
-  }, [filteredNodes]);
 
   if (filteredNodes.length === 0) {
     return null;
@@ -489,9 +453,6 @@ export default function ForceDirectedGraph3D({
   enabledEdgeTypes,
   showLabels = true,
 }: ForceDirectedGraph3DProps) {
-  const [cameraPosition, setCameraPosition] = useState<[number, number, number]>([0, 0, 0]);
-  const [cameraTarget, setCameraTarget] = useState<[number, number, number]>([0, 0, 0]);
-
   // Calculate bounds for camera
   const bounds = useMemo(() => {
     if (nodes.length === 0) {
@@ -527,11 +488,6 @@ export default function ForceDirectedGraph3D({
 
     return { center, radius };
   }, [nodes]);
-
-  const handleCameraUpdate = useCallback((position: [number, number, number], target: [number, number, number]) => {
-    setCameraPosition(position);
-    setCameraTarget(target);
-  }, []);
 
   if (nodes.length === 0) {
     return (
