@@ -28,11 +28,27 @@
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 16px;
+  position: relative;
+  z-index: 10; /* Above graph container but below dropdowns */
 }
 
 .search-section {
   position: relative;
   margin-bottom: 16px;
+  z-index: 50; /* Ensure search dropdown appears above other elements */
+}
+
+.info-banner {
+  background: var(--bg-primary, #0a0a0a);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  color: var(--text-primary, #fff);
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .graph-search-input {
@@ -66,7 +82,7 @@
   margin-top: 4px;
   max-height: 300px;
   overflow-y: auto;
-  z-index: 100;
+  z-index: 200; /* High z-index to appear above everything */
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
 }
 
@@ -102,6 +118,11 @@
   display: flex;
   gap: 24px;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.graph-settings .setting-group:last-child {
+  margin-left: auto; /* Push current model to the right */
 }
 
 .setting-group {
@@ -161,8 +182,9 @@
   display: flex;
   gap: 16px;
   font-size: 12px;
-  z-index: 10;
+  z-index: 15;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  max-width: calc(100% - 240px); /* Leave space for minimap on right (180px) + padding */
 }
 
 .info-item {
@@ -188,19 +210,24 @@
   border-radius: 6px;
   border: 1px solid var(--border-color, #333);
   max-width: 400px;
+  min-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: inline-block;
 }
 
 .graph-container {
   position: relative;
   width: 100%;
   min-height: 600px;
+  height: calc(100vh - 300px); /* Account for header and controls */
+  max-height: 800px;
   background: var(--bg-secondary, #1a1a1a);
   border: 1px solid var(--border-color, #333);
   border-radius: 8px;
-  overflow: hidden;
+  overflow: visible; /* Allow absolute children to be visible */
+  isolation: isolate; /* Create new stacking context */
 }
 
 .graph-error {
@@ -253,8 +280,9 @@
   display: flex;
   gap: 16px;
   font-size: 12px;
-  z-index: 10;
+  z-index: 15;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  max-width: calc(100% - 240px); /* Leave space for legend on right (200px) + padding */
 }
 
 .stat-item {
@@ -280,10 +308,38 @@
   .graph-settings {
     flex-direction: column;
     gap: 12px;
+    align-items: stretch;
+  }
+
+  .graph-settings .setting-group:last-child {
+    margin-left: 0;
   }
 
   .graph-stats {
     flex-direction: column;
     gap: 8px;
+    max-width: calc(100% - 32px);
+    bottom: 80px; /* Move up to avoid overlap with other elements */
+  }
+
+  .embedding-info {
+    bottom: 80px;
+    max-width: calc(100% - 32px);
+  }
+
+  .edge-type-legend {
+    top: 80px; /* Move down to avoid overlap */
+    right: 8px;
+    max-width: 150px;
+  }
+
+  .graph-container {
+    height: calc(100vh - 350px);
+    min-height: 400px;
+  }
+
+  .current-model {
+    max-width: 100%;
+    width: 100%;
   }
 }

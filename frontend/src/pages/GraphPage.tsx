@@ -37,6 +37,7 @@ export default function GraphPage() {
   const [sizeBy, setSizeBy] = useState<string>('downloads');
 
   // Load graph when modelId, maxDepth, or graphMode changes
+  // For full mode, load immediately on mount and whenever graphMode is 'full'
   useEffect(() => {
     const loadGraph = async () => {
       setLoading(true);
@@ -45,13 +46,13 @@ export default function GraphPage() {
         let data;
         
         if (graphMode === 'full') {
-          // Load full derivative network for all models
+          // Load full derivative network for all models - no search needed
           data = await fetchFullDerivativeNetwork({
             edgeTypes: undefined, // Get all types, filter client-side
             includeEdgeAttributes: true,
           });
         } else {
-          // Load family network for specific model
+          // Load family network for specific model - requires modelId
           if (!modelId.trim()) {
             setNodes([]);
             setLinks([]);
@@ -90,6 +91,7 @@ export default function GraphPage() {
       }
     };
 
+    // Always load graph - for full mode it loads immediately, for family mode it waits for modelId
     loadGraph();
   }, [modelId, maxDepth, graphMode]); // Reload when modelId, maxDepth, or graphMode changes
 
@@ -222,7 +224,9 @@ export default function GraphPage() {
       <div className="page-header">
         <h1>Model Relationship Graph</h1>
         <p className="page-description">
-          <strong>Full Network View:</strong> Explore all models and their derivative relationships in a 3D force-directed graph.
+          <strong>Full Network (Default):</strong> Interactive 3D force-directed graph showing ALL models and their derivative relationships.
+          <br />
+          <strong>Family Tree:</strong> Search for a specific model to view its lineage graph.
           <br />
           <strong>Embedding Space:</strong> View models in semantic space. Click any model to see its lineage graph.
           <br />
@@ -231,48 +235,56 @@ export default function GraphPage() {
       </div>
 
       <div className="graph-controls-panel">
-        <div className="search-section">
-          <input
-            type="text"
-            className="graph-search-input"
-            placeholder="Search for a model to visualize its relationships..."
-            value={modelId}
-            onChange={(e) => {
-              const value = e.target.value;
-              setModelId(value);
-              if (value.trim()) {
-                handleSearch(value);
-              } else {
-                setSearchResults([]);
-                setShowSearchResults(false);
-              }
-            }}
-            onFocus={() => {
-              if (searchResults.length > 0) {
-                setShowSearchResults(true);
-              }
-            }}
-          />
-          {showSearchResults && searchResults.length > 0 && (
-            <div className="search-results-dropdown">
-              {searchResults.map((model) => (
-                <div
-                  key={model.model_id}
-                  className="search-result-item"
-                  onClick={() => handleSearchResultClick(model)}
-                >
-                  <div className="result-title">{model.model_id}</div>
-                  <div className="result-meta">
-                    {model.library_name && <span>{model.library_name}</span>}
-                    {model.downloads > 0 && (
-                      <span>{model.downloads.toLocaleString()} downloads</span>
-                    )}
+        {graphMode === 'family' && (
+          <div className="search-section">
+            <input
+              type="text"
+              className="graph-search-input"
+              placeholder="Search for a model to view its lineage..."
+              value={modelId}
+              onChange={(e) => {
+                const value = e.target.value;
+                setModelId(value);
+                if (value.trim()) {
+                  handleSearch(value);
+                } else {
+                  setSearchResults([]);
+                  setShowSearchResults(false);
+                }
+              }}
+              onFocus={() => {
+                if (searchResults.length > 0) {
+                  setShowSearchResults(true);
+                }
+              }}
+            />
+            {showSearchResults && searchResults.length > 0 && (
+              <div className="search-results-dropdown">
+                {searchResults.map((model) => (
+                  <div
+                    key={model.model_id}
+                    className="search-result-item"
+                    onClick={() => handleSearchResultClick(model)}
+                  >
+                    <div className="result-title">{model.model_id}</div>
+                    <div className="result-meta">
+                      {model.library_name && <span>{model.library_name}</span>}
+                      {model.downloads > 0 && (
+                        <span>{model.downloads.toLocaleString()} downloads</span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        
+        {graphMode === 'full' && (
+          <div className="info-banner">
+            <span>📊 Viewing full network: All models and relationships loaded</span>
+          </div>
+        )}
 
         <div className="graph-settings">
           <div className="setting-group">
@@ -382,12 +394,15 @@ export default function GraphPage() {
         ) : nodes.length === 0 ? (
           <div className="graph-empty">
             {graphMode === 'full' ? (
-              <p>Loading full derivative network for all models...</p>
+              <>
+                <p>Loading full derivative network for all models...</p>
+                <p className="empty-hint">This may take a moment as we load all models and their relationships.</p>
+              </>
             ) : (
               <>
-                <p>Select a model to visualize its lineage graph.</p>
+                <p>Search for a model above to visualize its lineage graph.</p>
                 <p className="empty-hint">
-                  Switch to "Embedding Space" view and click on any model, or search for a model above.
+                  Or switch to "Full Network" mode to see all models, or "Embedding Space" to browse and click models.
                   <br />
                   Try popular models like: <code>bert-base-uncased</code>, <code>gpt2</code>, or <code>t5-base</code>
                 </p>
