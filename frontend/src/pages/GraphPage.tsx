@@ -93,9 +93,10 @@ export default function GraphPage() {
     loadGraph();
   }, [modelId, maxDepth, graphMode]); // Reload when modelId, maxDepth, or graphMode changes
 
-  // Load embedding data when switching to embedding view or when nodes change
+  // Load embedding data when switching to embedding view
+  // This loads ALL models for embedding space view, independent of graph mode
   useEffect(() => {
-    if (viewMode !== 'embedding' || nodes.length === 0) {
+    if (viewMode !== 'embedding') {
       setEmbeddingData([]);
       return;
     }
@@ -103,55 +104,30 @@ export default function GraphPage() {
     const loadEmbeddingData = async () => {
       setLoadingEmbedding(true);
       try {
-        // Fetch embedding data for all models in the graph
-        const modelIds = nodes.map(n => n.id);
+        // For embedding space, always load all models (or a large sample)
+        // This is independent of whether we're in full network or family mode
         const params = new URLSearchParams({
-          max_points: '10000', // Limit for performance
+          max_points: '150000', // Load up to 150k models for embedding view
           format: 'json',
         });
         
-        // Add search query to filter to our models
-        // Since we can't filter by exact model IDs easily, we'll fetch and filter client-side
         const response = await fetch(`${API_BASE}/api/models?${params}`);
         if (!response.ok) throw new Error('Failed to fetch embedding data');
         
         const data = await response.json();
         const allModels: ModelPoint[] = Array.isArray(data) ? data : (data.models || []);
         
-        // Filter to only models in our graph
-        const modelIdSet = new Set(modelIds);
-        const filteredModels = allModels.filter(m => modelIdSet.has(m.model_id));
-        
-        // If we don't have all models, try fetching them individually or use what we have
-        setEmbeddingData(filteredModels);
+        setEmbeddingData(allModels);
       } catch (err: any) {
         console.error('Failed to load embedding data:', err);
-        // Fallback: create ModelPoint objects from graph nodes (without coordinates)
-        const fallbackData: ModelPoint[] = nodes.map(node => ({
-          model_id: node.id,
-          x: 0,
-          y: 0,
-          z: 0,
-          library_name: node.library || null,
-          pipeline_tag: node.pipeline || null,
-          downloads: node.downloads || 0,
-          likes: node.likes || 0,
-          trending_score: null,
-          tags: null,
-          parent_model: null,
-          licenses: null,
-          family_depth: null,
-          cluster_id: null,
-          created_at: null,
-        }));
-        setEmbeddingData(fallbackData);
+        setEmbeddingData([]);
       } finally {
         setLoadingEmbedding(false);
       }
     };
 
     loadEmbeddingData();
-  }, [viewMode, nodes]);
+  }, [viewMode]);
 
   // Handle search
   const handleSearch = useCallback(async (query: string) => {
@@ -209,6 +185,9 @@ export default function GraphPage() {
     setSelectedModel(model);
     setSelectedNodeId(model.model_id);
     setModelId(model.model_id);
+    // When clicking a model in embedding space, switch to its lineage graph
+    setGraphMode('family');
+    setViewMode('graph3d'); // Show lineage in 3D graph view
   }, []);
 
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -243,8 +222,10 @@ export default function GraphPage() {
       <div className="page-header">
         <h1>Model Relationship Graph</h1>
         <p className="page-description">
-          Visualize model derivatives and relationships. Choose between family tree view (single model) or full network view (all models).
-          Switch between 2D/3D force-directed graph views and embedding space view.
+          <strong>Full Network View:</strong> Explore all models and their derivative relationships in a 3D force-directed graph.
+          <br />
+          <strong>Embedding Space:</strong> View models in semantic space. Click any model to see its lineage graph.
+          <br />
           Explore how models are connected through fine-tuning, quantization, adapters, and merges.
         </p>
       </div>
@@ -302,12 +283,13 @@ export default function GraphPage() {
                 setGraphMode(e.target.value as GraphMode);
                 if (e.target.value === 'full') {
                   setViewMode('graph3d'); // Default to 3D for full graph
+                  setModelId(''); // Clear model selection for full network
                 }
               }}
               className="graph-mode-select"
             >
-              <option value="family">Family Tree (Single Model)</option>
               <option value="full">Full Network (All Models)</option>
+              <option value="family">Family Tree (Single Model Lineage)</option>
             </select>
           </div>
 
@@ -357,23 +339,31 @@ export default function GraphPage() {
           )}
 
           {graphMode === 'family' && (
-            <div className="setting-group">
-              <label>Max Depth:</label>
-              <input
-                type="number"
-                min="1"
-                max="20"
-                value={maxDepth || ''}
-                onChange={(e) => setMaxDepth(e.target.value ? parseInt(e.target.value) : undefined)}
-                className="depth-input"
-              />
-            </div>
+            <>
+              <div className="setting-group">
+                <label>Max Depth:</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={maxDepth || ''}
+                  onChange={(e) => setMaxDepth(e.target.value ? parseInt(e.target.value) : undefined)}
+                  className="depth-input"
+                />
+              </div>
+              <div className="setting-group">
+                <label>Current Model:</label>
+                <div className="current-model">{modelId || 'None selected'}</div>
+              </div>
+            </>
           )}
-
-          {graphMode === 'family' && (
+          
+          {graphMode === 'full' && graphStats && (
             <div className="setting-group">
-              <label>Current Model:</label>
-              <div className="current-model">{modelId || 'None selected'}</div>
+              <label>Network Stats:</label>
+              <div className="network-stats-summary">
+                {graphStats.nodes?.toLocaleString()} models, {graphStats.edges?.toLocaleString()} relationships
+              </div>
             </div>
           )}
         </div>
@@ -395,8 +385,10 @@ export default function GraphPage() {
               <p>Loading full derivative network for all models...</p>
             ) : (
               <>
-                <p>Enter a model ID above to visualize its relationship graph.</p>
+                <p>Select a model to visualize its lineage graph.</p>
                 <p className="empty-hint">
+                  Switch to "Embedding Space" view and click on any model, or search for a model above.
+                  <br />
                   Try popular models like: <code>bert-base-uncased</code>, <code>gpt2</code>, or <code>t5-base</code>
                 </p>
               </>
@@ -479,11 +471,11 @@ export default function GraphPage() {
         ) : (
           <>
             {loadingEmbedding ? (
-              <LoadingProgress message="Loading embedding data..." progress={0} />
+              <LoadingProgress message="Loading embedding data for all models..." progress={0} />
             ) : embeddingData.length === 0 ? (
               <div className="graph-empty">
-                <p>No embedding data available for these models.</p>
-                <p className="empty-hint">Try switching to graph view or selecting a different model.</p>
+                <p>Loading embedding data...</p>
+                <p className="empty-hint">This may take a moment for the full dataset.</p>
               </div>
             ) : (
               <div style={{ width: '100%', height: '100%', position: 'relative' }}>
@@ -498,11 +490,20 @@ export default function GraphPage() {
                 <div className="embedding-info">
                   <div className="info-item">
                     <span className="info-label">Models:</span>
-                    <span className="info-value">{embeddingData.length}</span>
+                    <span className="info-value">{embeddingData.length.toLocaleString()}</span>
                   </div>
                   <div className="info-item">
                     <span className="info-label">View:</span>
                     <span className="info-value">Embedding Space</span>
+                  </div>
+                  {selectedModel && (
+                    <div className="info-item">
+                      <span className="info-label">Selected:</span>
+                      <span className="info-value">{selectedModel.model_id}</span>
+                    </div>
+                  )}
+                  <div className="info-hint">
+                    💡 Click any model to view its lineage graph
                   </div>
                 </div>
               </div>
