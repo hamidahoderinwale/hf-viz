@@ -36,10 +36,9 @@ COPY --from=frontend-builder --chown=user /frontend/build /app/frontend/build
 RUN mkdir -p /app/precomputed_data /app/cache && chown -R user:user /app/precomputed_data /app/cache
 
 # Copy precomputed data if available (metadata only in repo)
-# Create placeholder first to ensure directory is never empty, then copy actual files
-RUN touch /app/precomputed_data/.placeholder && chown user:user /app/precomputed_data/.placeholder
-COPY --chown=user precomputed_data/ /app/precomputed_data/
-RUN rm -f /app/precomputed_data/.placeholder
+# The directory should contain .gitkeep and metadata_v1.json (both committed to git)
+# If COPY fails, it means the directory is empty in build context (shouldn't happen)
+COPY --chown=user precomputed_data /app/precomputed_data
 
 # Switch to non-root user
 USER user
