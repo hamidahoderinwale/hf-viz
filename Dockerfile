@@ -38,6 +38,7 @@ RUN mkdir -p /app/precomputed_data /app/cache && chown -R user:user /app/precomp
 # Copy precomputed data if available (metadata only in repo)
 # Note: precomputed_data/ must contain at least one file (.gitkeep or metadata_v1.json)
 # for COPY to succeed. The .gitkeep file ensures the directory is never empty.
+# Triggering rebuild to verify fix.
 COPY --chown=user precomputed_data/ /app/precomputed_data/
 
 # Switch to non-root user
