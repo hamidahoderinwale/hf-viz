@@ -280,10 +280,9 @@ function App() {
       setLoading(false);
       fetchDataAbortRef.current = null;
     }
-  }, [minDownloads, minLikes, searchQuery, projectionMethod, baseModelsOnly, semanticSimilarityMode, semanticQueryModel, useGraphEmbeddings, selectedClusters, viewMode, showAllModels]);
+  }, [minDownloads, minLikes, searchQuery, projectionMethod, baseModelsOnly, semanticSimilarityMode, semanticQueryModel, useGraphEmbeddings, viewMode, showAllModels, colorBy, sizeBy]);
 
   // Debounce times for different control types
-  const SLIDER_DEBOUNCE_MS = 500; // Sliders need longer debounce
   const SEARCH_DEBOUNCE_MS = 300; // Search debounce
   const DROPDOWN_DEBOUNCE_MS = 200; // Dropdowns need shorter debounce
 

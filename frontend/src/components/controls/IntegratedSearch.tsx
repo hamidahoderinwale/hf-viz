@@ -228,11 +228,11 @@ export default function IntegratedSearch({
     }
   };
 
-  const openModal = () => {
+  const openModal = useCallback(() => {
     setIsModalOpen(true);
     setLocalQuery(value);
     setTimeout(() => modalInputRef.current?.focus(), 50);
-  };
+  }, [value]);
 
   const closeModal = () => {
     setIsModalOpen(false);
@@ -251,7 +251,7 @@ export default function IntegratedSearch({
 
     document.addEventListener('keydown', handleGlobalKeyDown);
     return () => document.removeEventListener('keydown', handleGlobalKeyDown);
-  }, []);
+  }, [openModal]);
 
   // Format relevance score (server returns 0-100)
   const formatScore = (score?: number) => {

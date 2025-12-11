@@ -77,7 +77,7 @@ export default function GraphPage() {
     };
 
     loadGraph();
-  }, [modelId, maxDepth]); // Only reload when modelId or maxDepth changes
+  }, [modelId, maxDepth, enabledEdgeTypes]); // Only reload when modelId or maxDepth changes
 
   // Load embedding data when switching to embedding view or when nodes change
   useEffect(() => {
@@ -206,14 +206,22 @@ export default function GraphPage() {
         const rect = containerRef.current.getBoundingClientRect();
         setDimensions({
           width: rect.width,
-          height: Math.max(600, rect.height - 200),
+          height: Math.max(600, Math.min(rect.height, 800)), // Cap at 800px max
         });
       }
     };
 
     updateDimensions();
     window.addEventListener('resize', updateDimensions);
-    return () => window.removeEventListener('resize', updateDimensions);
+    // Also update on viewport changes
+    const resizeObserver = new ResizeObserver(updateDimensions);
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+    return () => {
+      window.removeEventListener('resize', updateDimensions);
+      resizeObserver.disconnect();
+    };
   }, []);
 
   return (
@@ -397,7 +405,7 @@ export default function GraphPage() {
                 <p className="empty-hint">Try switching to graph view or selecting a different model.</p>
               </div>
             ) : (
-              <>
+              <div style={{ width: '100%', height: '100%', position: 'relative' }}>
                 <ScatterPlot3D
                   data={embeddingData}
                   colorBy={colorBy}
@@ -416,7 +424,7 @@ export default function GraphPage() {
                     <span className="info-value">Embedding Space</span>
                   </div>
                 </div>
-              </>
+              </div>
             )}
           </>
         )}

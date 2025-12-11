@@ -1,7 +1,7 @@
 /**
  * Intro Modal - Brief onboarding guide for the dashboard
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { X, Palette, Maximize2, Search, Move3D, Sparkles } from 'lucide-react';
 import './IntroModal.css';
 
@@ -12,12 +12,12 @@ interface IntroModalProps {
 export default function IntroModal({ onClose }: IntroModalProps) {
   const [dontShowAgain, setDontShowAgain] = useState(false);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     if (dontShowAgain) {
       localStorage.setItem('hf-intro-dismissed', 'true');
     }
     onClose();
-  };
+  }, [dontShowAgain, onClose]);
 
   // Close on Escape
   useEffect(() => {
@@ -28,7 +28,7 @@ export default function IntroModal({ onClose }: IntroModalProps) {
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [dontShowAgain]);
+  }, [dontShowAgain, handleClose]);
 
   return (
     <div className="intro-modal">

@@ -3,7 +3,7 @@
  * Displays different types of derivatives (finetunes, adapters, quantizations, merges)
  * with color-coded edges and interactive nodes.
  */
-import React, { useMemo, useRef, useEffect, useState, useCallback } from 'react';
+import React, { useMemo, useRef, useEffect, useState } from 'react';
 import * as d3 from 'd3';
 import './ForceDirectedGraph.css';
 
@@ -108,8 +108,12 @@ export default function ForceDirectedGraph({
     }
     const connectedNodeIds = new Set<string>();
     filteredLinks.forEach(link => {
-      const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
-      const targetId = typeof link.target === 'string' ? link.target : link.target.id;
+      const sourceId = typeof link.source === 'string' 
+        ? link.source 
+        : (link.source as GraphNode).id;
+      const targetId = typeof link.target === 'string' 
+        ? link.target 
+        : (link.target as GraphNode).id;
       connectedNodeIds.add(sourceId);
       connectedNodeIds.add(targetId);
     });
@@ -166,7 +170,7 @@ export default function ForceDirectedGraph({
       )
       .force('charge', d3.forceManyBody().strength(-300))
       .force('center', d3.forceCenter(0, 0))
-      .force('collision', d3.forceCollide().radius((d) => {
+      .force('collision', d3.forceCollide<GraphNode>().radius((d) => {
         // Node size based on downloads
         const downloads = d.downloads || 0;
         return 5 + Math.sqrt(downloads) / 200;
@@ -212,17 +216,17 @@ export default function ForceDirectedGraph({
         return `url(#arrow-${edgeType})`;
       })
       .style('cursor', 'pointer')
-      .on('mouseenter', function(event, d) {
-        d3.select(this).attr('stroke-opacity', 1).attr('stroke-width', (d) => {
-          const edgeType = d.edge_type;
-          return (EDGE_STROKE_WIDTH[edgeType] || 1) + 1;
-        });
+      .on('mouseenter', function(event, d: ProcessedLink) {
+        const edgeType = d.edge_type;
+        d3.select(this)
+          .attr('stroke-opacity', 1)
+          .attr('stroke-width', (EDGE_STROKE_WIDTH[edgeType] || 1) + 1);
       })
-      .on('mouseleave', function(event, d) {
-        d3.select(this).attr('stroke-opacity', 0.6).attr('stroke-width', (d) => {
-          const edgeType = d.edge_type;
-          return EDGE_STROKE_WIDTH[edgeType] || 1;
-        });
+      .on('mouseleave', function(event, d: ProcessedLink) {
+        const edgeType = d.edge_type;
+        d3.select(this)
+          .attr('stroke-opacity', 0.6)
+          .attr('stroke-width', EDGE_STROKE_WIDTH[edgeType] || 1);
       });
 
     // Create nodes
@@ -285,7 +289,7 @@ export default function ForceDirectedGraph({
 
     // Create labels
     if (showLabels) {
-      const label = g
+      g
         .append('g')
         .attr('class', 'labels')
         .selectAll('text')

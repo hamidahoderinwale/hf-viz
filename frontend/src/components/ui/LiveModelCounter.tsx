@@ -35,18 +35,14 @@ export default function LiveModelCounter({
   onNewModelsDetected,
 }: LiveModelCounterProps) {
   const [currentCount, setCurrentCount] = useState<ModelCountData | null>(null);
-  const [previousCount, setPreviousCount] = useState<number | null>(null);
   const [growthStats, setGrowthStats] = useState<GrowthStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [newModelsAdded, setNewModelsAdded] = useState<number>(0);
   const [showPulse, setShowPulse] = useState(false);
 
   const fetchCurrentCount = useCallback(async (isManual = false) => {
-    if (isManual) setIsRefreshing(true);
-    
     try {
       // Try primary endpoint first
       let data: ModelCountData | null = null;
@@ -93,7 +89,6 @@ export default function LiveModelCounter({
         }
       }
       
-      setPreviousCount(currentCount?.total_models || null);
       setCurrentCount(data);
       setLastUpdate(new Date());
       setError(null);
@@ -101,7 +96,6 @@ export default function LiveModelCounter({
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
-      setIsRefreshing(false);
     }
   }, [currentCount, onNewModelsDetected]);
 
@@ -123,7 +117,7 @@ export default function LiveModelCounter({
     if (showGrowth) {
       fetchGrowthStats();
     }
-  }, []);
+  }, [fetchCurrentCount, fetchGrowthStats, showGrowth]);
 
   // Polling interval
   useEffect(() => {
@@ -144,13 +138,6 @@ export default function LiveModelCounter({
 
     return () => clearInterval(growthInterval);
   }, [showGrowth, fetchGrowthStats]);
-
-  const formatNumber = (num: number): string => {
-    if (num >= 1000000) {
-      return `${(num / 1000000).toFixed(2)}M`;
-    }
-    return new Intl.NumberFormat('en-US').format(num);
-  };
 
   const formatLargeNumber = (num: number): string => {
     return new Intl.NumberFormat('en-US').format(num);

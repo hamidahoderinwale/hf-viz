@@ -52,7 +52,7 @@ export default function ModelPopup({
     };
 
     fetchLineage();
-  }, [model?.model_id, isOpen]);
+  }, [model, isOpen]);
 
   // Handle escape key
   useEffect(() => {
