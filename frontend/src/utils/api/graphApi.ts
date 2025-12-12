@@ -68,7 +68,8 @@ export async function fetchFullDerivativeNetwork(
     includeEdgeAttributes?: boolean;
   } = {}
 ): Promise<NetworkGraphResponse> {
-  const { edgeTypes, includeEdgeAttributes = true } = options;
+  // Default to false for performance with large graphs
+  const { edgeTypes, includeEdgeAttributes = false } = options;
 
   const params = new URLSearchParams();
   if (edgeTypes && edgeTypes.length > 0) {

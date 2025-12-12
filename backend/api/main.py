@@ -1618,30 +1618,41 @@ async def get_family_network(
 @cached_response(ttl=3600, key_prefix="full_derivatives_network")
 async def get_full_derivative_network(
     edge_types: Optional[str] = Query(None, description="Comma-separated list of edge types to include (finetune,quantized,adapter,merge,parent). If None, includes all types."),
-    include_edge_attributes: bool = Query(True, description="Whether to include edge attributes (change in likes, downloads, etc.)")
+    include_edge_attributes: bool = Query(False, description="Whether to include edge attributes (change in likes, downloads, etc.). Default False for performance.")
 ):
     """
     Build full derivative relationship network for ALL models in the database.
     Returns a non-embedding based force-directed graph where edges represent derivative types.
     This computes over every single model in the database.
+    
+    Note: Edge attributes are disabled by default for performance with large datasets.
     """
     if df is None:
         raise DataNotLoadedError()
     
     try:
+        import time
+        start_time = time.time()
         logger.info(f"Building full derivative network for {len(df):,} models...")
+        
         filter_types = None
         if edge_types:
             filter_types = [t.strip() for t in edge_types.split(',') if t.strip()]
         
         network_builder = ModelNetworkBuilder(df)
         logger.info("Calling build_full_derivative_network...")
+        
+        # Disable edge attributes for very large graphs to improve performance
+        # They can be slow to compute for 100k+ edges
         graph = network_builder.build_full_derivative_network(
             include_edge_attributes=include_edge_attributes,
             filter_edge_types=filter_types
         )
-        logger.info(f"Graph built: {graph.number_of_nodes():,} nodes, {graph.number_of_edges():,} edges")
         
+        build_time = time.time() - start_time
+        logger.info(f"Graph built in {build_time:.2f}s: {graph.number_of_nodes():,} nodes, {graph.number_of_edges():,} edges")
+        
+        # Build nodes list
         nodes = []
         for node_id, attrs in graph.nodes(data=True):
             nodes.append({
@@ -1656,7 +1667,9 @@ async def get_full_derivative_network(
         
         logger.info(f"Processed {len(nodes):,} nodes")
         
+        # Build links list
         links = []
+        edge_count = 0
         for source, target, edge_attrs in graph.edges(data=True):
             link_data = {
                 "source": source,
@@ -1675,11 +1688,15 @@ async def get_full_derivative_network(
                 })
             
             links.append(link_data)
+            edge_count += 1
+            if edge_count % 10000 == 0:
+                logger.info(f"Processed {edge_count:,} edges...")
         
         logger.info(f"Processed {len(links):,} links")
         
         stats = network_builder.get_network_statistics(graph)
-        logger.info("Full derivative network built successfully")
+        total_time = time.time() - start_time
+        logger.info(f"Full derivative network built successfully in {total_time:.2f}s")
         
         return {
             "nodes": nodes,
@@ -1687,7 +1704,9 @@ async def get_full_derivative_network(
             "statistics": stats
         }
     except Exception as e:
-        logger.error(f"Error building full derivative network: {e}", exc_info=True)
+        import traceback
+        error_trace = traceback.format_exc()
+        logger.error(f"Error building full derivative network: {e}\n{error_trace}")
         error_detail = f"Error building full derivative network: {str(e)}"
         if isinstance(e, (ValueError, KeyError, AttributeError)):
             error_detail += f" (Type: {type(e).__name__})"
