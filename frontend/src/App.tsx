@@ -504,10 +504,10 @@ function App() {
       licenses: null,
       cluster_id: null,
       created_at: null,
-      library_name: node.library_name || null,
-      pipeline_tag: node.pipeline_tag || null,
+      library_name: node.library || null,
+      pipeline_tag: node.pipeline || null,
       parent_model: null,
-      family_depth: node.depth || null,
+      family_depth: null,
     };
     setSelectedModel(modelPoint);
     setIsModalOpen(true);
