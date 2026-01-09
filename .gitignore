@@ -11,6 +11,7 @@ ENV/
 
 # Caches
 *.pkl
+!precomputed_data/force_layout_3d.pkl
 *.pickle
 *.cache
 embeddings_cache.pkl
