@@ -4,6 +4,9 @@
 import { API_BASE } from '../../config/api';
 import { GraphNode, GraphLink, EdgeType } from '../../components/visualizations/ForceDirectedGraph';
 
+// Re-export types for convenience
+export type { EdgeType, GraphNode, GraphLink };
+
 export interface NetworkGraphResponse {
   nodes: GraphNode[];
   links: GraphLink[];
