@@ -289,7 +289,7 @@ export default function GraphPage() {
         
         {graphMode === 'full' && (
           <div className="info-banner">
-            <span>📊 Viewing full network: All models and relationships loaded</span>
+            <span>Viewing full network: All models and relationships loaded</span>
           </div>
         )}
 
@@ -547,7 +547,7 @@ export default function GraphPage() {
                     </div>
                   )}
                   <div className="info-hint">
-                    💡 Click any model to view its lineage graph
+                    Click any model to view its lineage graph
                   </div>
                 </div>
               </div>
