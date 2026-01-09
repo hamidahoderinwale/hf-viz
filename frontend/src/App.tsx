@@ -104,6 +104,9 @@ function App() {
   // Threshold for using instanced rendering
   const INSTANCED_THRESHOLD = 10000;
   
+  // Track if force graph has been loaded
+  const graphLoadedRef = useRef(false);
+  
   const [, setSearchResults] = useState<SearchResult[]>([]);
   const [searchInput] = useState('');
   const [, setShowSearchResults] = useState(false);
@@ -458,8 +461,11 @@ function App() {
 
   // Load force graph data when vizMode is 'force-graph'
   useEffect(() => {
-    if (vizMode !== 'force-graph') return;
-    if (graphNodes.length > 0) return; // Already loaded
+    if (vizMode !== 'force-graph') {
+      graphLoadedRef.current = false;
+      return;
+    }
+    if (graphLoadedRef.current) return; // Already loaded
     
     const loadForceGraph = async () => {
       setGraphLoading(true);
@@ -479,6 +485,7 @@ function App() {
             setEnabledEdgeTypes(availableTypes);
           }
         }
+        graphLoadedRef.current = true;
       } catch (err) {
         setGraphError(err instanceof Error ? err.message : 'Failed to load graph');
       } finally {
