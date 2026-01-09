@@ -566,6 +566,64 @@
     color: var(--text-primary);
   }
 
+  /* Visualization Mode Toggle */
+  .viz-mode-toggle {
+    display: flex;
+    gap: 0;
+  }
+  
+  .viz-mode-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.65rem;
+    border: 1px solid var(--border-medium);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all var(--transition-base);
+    font-family: var(--font-primary);
+  }
+  
+  .viz-mode-btn:first-child {
+    border-right: none;
+  }
+  
+  .viz-mode-btn.active {
+    background: var(--accent-primary);
+    color: white;
+    border-color: var(--accent-primary);
+  }
+  
+  .viz-mode-btn:hover:not(.active) {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+
+  .viz-mode-btn svg {
+    flex-shrink: 0;
+  }
+
+  /* Graph Stats Overlay */
+  .graph-stats-overlay {
+    position: absolute;
+    bottom: 80px;
+    right: 20px;
+    background: rgba(0, 0, 0, 0.75);
+    color: white;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+    display: flex;
+    gap: 1rem;
+    z-index: 100;
+    font-family: var(--font-mono);
+  }
+  
+  .graph-stats-overlay span {
+    white-space: nowrap;
+  }
+
   .control-select {
     padding: 0.35rem 0.5rem;
     border: 1px solid var(--border-medium);

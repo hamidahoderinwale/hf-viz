@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Palette, Maximize2, Eye } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Palette, Maximize2, Eye, GitBranch, Scatter } from 'lucide-react';
 import IntroModal from './components/ui/IntroModal';
 import ScatterPlot3D from './components/visualizations/ScatterPlot3D';
 import NetworkGraph from './components/visualizations/NetworkGraph';
 import DistributionView from './components/visualizations/DistributionView';
+import ForceDirectedGraph3D from './components/visualizations/ForceDirectedGraph3D';
+import ForceDirectedGraph3DInstanced from './components/visualizations/ForceDirectedGraph3DInstanced';
 import type { Cluster } from './components/controls/ClusterFilter';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import LiveModelCounter from './components/ui/LiveModelCounter';
 import ModelPopup from './components/ui/ModelPopup';
 import AnalyticsPage from './pages/AnalyticsPage';
 import FamiliesPage from './pages/FamiliesPage';
-import GraphPage from './pages/GraphPage';
+import { fetchFullDerivativeNetwork, getAvailableEdgeTypes, EdgeType } from './utils/api/graphApi';
+import type { GraphNode } from './components/visualizations/ForceDirectedGraph';
 // Types & Utils
 import { ModelPoint, Stats, SearchResult } from './types';
 import IntegratedSearch from './components/controls/IntegratedSearch';
@@ -83,8 +86,22 @@ function App() {
   const [semanticQueryModel] = useState<string | null>(null);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showFamilies, setShowFamilies] = useState(false);
-  const [showGraph, setShowGraph] = useState(false);
   const [showAllModels, setShowAllModels] = useState(false);
+  
+  // Visualization mode: 'embeddings' (default) or 'force-graph'
+  const [vizMode, setVizMode] = useState<'embeddings' | 'force-graph'>('embeddings');
+  
+  // Force graph state
+  const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
+  const [graphLinks, setGraphLinks] = useState<any[]>([]);
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [graphError, setGraphError] = useState<string | null>(null);
+  const [graphStats, setGraphStats] = useState<any>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [enabledEdgeTypes, setEnabledEdgeTypes] = useState<Set<EdgeType>>(
+    new Set(['finetune', 'quantized', 'adapter', 'merge', 'parent'])
+  );
+  const INSTANCED_THRESHOLD = 10000;
   
   const [, setSearchResults] = useState<SearchResult[]>([]);
   const [searchInput] = useState('');
@@ -438,6 +455,64 @@ function App() {
     return () => clearTimeout(timer);
   }, []);
 
+  // Load force graph data when vizMode is 'force-graph'
+  useEffect(() => {
+    if (vizMode !== 'force-graph') return;
+    if (graphNodes.length > 0) return; // Already loaded
+    
+    const loadForceGraph = async () => {
+      setGraphLoading(true);
+      setGraphError(null);
+      try {
+        const data = await fetchFullDerivativeNetwork({
+          edgeTypes: undefined,
+          includeEdgeAttributes: true,
+        });
+        setGraphNodes(data.nodes || []);
+        setGraphLinks(data.links || []);
+        setGraphStats(data.statistics);
+        
+        if (data.links && data.links.length > 0) {
+          const availableTypes = getAvailableEdgeTypes(data.links);
+          if (availableTypes.size > 0) {
+            setEnabledEdgeTypes(new Set(availableTypes));
+          }
+        }
+      } catch (err: any) {
+        console.error('Error loading force graph:', err);
+        setGraphError(err.message || 'Failed to load graph');
+      } finally {
+        setGraphLoading(false);
+      }
+    };
+    
+    loadForceGraph();
+  }, [vizMode, graphNodes.length]);
+
+  // Handle force graph node click
+  const handleGraphNodeClick = useCallback((node: GraphNode) => {
+    setSelectedNodeId(node.id);
+    const modelPoint: ModelPoint = {
+      model_id: node.id,
+      x: node.x || 0,
+      y: node.y || 0,
+      z: node.z || 0,
+      downloads: node.downloads || 0,
+      likes: node.likes || 0,
+      trending_score: null,
+      tags: null,
+      licenses: null,
+      cluster_id: null,
+      created_at: null,
+      library_name: node.library_name || null,
+      pipeline_tag: node.pipeline_tag || null,
+      parent_model: null,
+      family_depth: node.depth || null,
+    };
+    setSelectedModel(modelPoint);
+    setIsModalOpen(true);
+  }, []);
+
   // Fetch clusters with retry logic
   useEffect(() => {
     const fetchClusters = async (retries = 3) => {
@@ -533,10 +608,9 @@ function App() {
                 onClick={() => {
                   setShowAnalytics(false);
                   setShowFamilies(false);
-                  setShowGraph(false);
                 }}
-                className={`nav-tab ${!showAnalytics && !showFamilies && !showGraph ? 'active' : ''}`}
-                title="3D scatter plot of model embeddings — explore the model space interactively"
+                className={`nav-tab ${!showAnalytics && !showFamilies ? 'active' : ''}`}
+                title="Explore model embeddings or relationship graphs"
               >
                 Visualization
               </button>
@@ -544,7 +618,6 @@ function App() {
                 onClick={() => {
                   setShowAnalytics(false);
                   setShowFamilies(true);
-                  setShowGraph(false);
                 }}
                 className={`nav-tab ${showFamilies ? 'active' : ''}`}
                 title="Browse model families and their lineage trees"
@@ -554,18 +627,6 @@ function App() {
               <button
                 onClick={() => {
                   setShowFamilies(false);
-                  setShowAnalytics(false);
-                  setShowGraph(true);
-                }}
-                className={`nav-tab ${showGraph ? 'active' : ''}`}
-                title="Force-directed graph showing model relationships and derivatives"
-              >
-                Graph
-              </button>
-              <button
-                onClick={() => {
-                  setShowFamilies(false);
-                  setShowGraph(false);
                   setShowAnalytics(true);
                 }}
                 className={`nav-tab ${showAnalytics ? 'active' : ''}`}
@@ -593,8 +654,6 @@ function App() {
               <AnalyticsPage />
             ) : showFamilies ? (
               <FamiliesPage />
-            ) : showGraph ? (
-              <GraphPage />
             ) : (
       <div className="visualization-layout">
         <div className="control-bar">
@@ -609,82 +668,120 @@ function App() {
             {/* Center: Core Controls */}
             <div className="control-bar-center">
 
-              {/* Color by */}
-              <div className="control-group">
-                <Palette size={14} className="control-icon" />
-                <select 
-                  value={colorBy} 
-                  onChange={(e) => debouncedSetColorBy(e.target.value as ColorByOption)}
-                  className="control-select"
-                  title="Color points by attribute - Changes what determines each point's color"
+              {/* Visualization Mode Toggle */}
+              <div className="control-group viz-mode-toggle">
+                <button
+                  className={`viz-mode-btn ${vizMode === 'embeddings' ? 'active' : ''}`}
+                  onClick={() => setVizMode('embeddings')}
+                  title="View models in semantic embedding space"
                 >
-                  <option value="family_depth">Family Depth</option>
-                  <option value="library_name">ML Library</option>
-                  <option value="pipeline_tag">Task Type</option>
-                  <option value="downloads">Downloads</option>
-                  <option value="likes">Likes</option>
-                </select>
-                {(colorBy === 'downloads' || colorBy === 'likes' || colorBy === 'trending_score') && (
-                  <select 
-                    value={colorScheme} 
-                    onChange={(e) => debouncedSetColorScheme(e.target.value as any)}
-                    className="control-select control-select-small"
-                    title="Color gradient style"
-                  >
-                    <option value="viridis">Viridis</option>
-                    <option value="plasma">Plasma</option>
-                    <option value="inferno">Inferno</option>
-                    <option value="coolwarm">Cool-Warm</option>
-                  </select>
-                )}
-              </div>
-
-              <span className="control-divider" />
-
-              {/* Size by */}
-              <div className="control-group">
-                <Maximize2 size={14} className="control-icon" />
-                <select 
-                  value={sizeBy} 
-                  onChange={(e) => debouncedSetSizeBy(e.target.value as SizeByOption)}
-                  className="control-select"
-                  title="Size points by attribute - Larger values = bigger points"
+                  <Scatter size={14} />
+                  <span>Embeddings</span>
+                </button>
+                <button
+                  className={`viz-mode-btn ${vizMode === 'force-graph' ? 'active' : ''}`}
+                  onClick={() => setVizMode('force-graph')}
+                  title="View model relationships as a force-directed graph"
                 >
-                  <option value="downloads">By Downloads</option>
-                  <option value="likes">By Likes</option>
-                  <option value="none">Uniform Size</option>
-                </select>
+                  <GitBranch size={14} />
+                  <span>Relationships</span>
+                </button>
               </div>
 
-              <span className="control-divider" />
+              {vizMode === 'embeddings' && (
+                <>
+                  <span className="control-divider" />
 
-              {/* Stats summary */}
-              <div className="control-stats" title="Number of models currently loaded and visible in the visualization">
-                <Eye size={14} className="control-icon" />
-                <span className="control-stats-text">
-                  {data.length.toLocaleString()} models
-                </span>
-              </div>
+                  {/* Color by */}
+                  <div className="control-group">
+                    <Palette size={14} className="control-icon" />
+                    <select 
+                      value={colorBy} 
+                      onChange={(e) => debouncedSetColorBy(e.target.value as ColorByOption)}
+                      className="control-select"
+                      title="Color points by attribute - Changes what determines each point's color"
+                    >
+                      <option value="family_depth">Family Depth</option>
+                      <option value="library_name">ML Library</option>
+                      <option value="pipeline_tag">Task Type</option>
+                      <option value="downloads">Downloads</option>
+                      <option value="likes">Likes</option>
+                    </select>
+                    {(colorBy === 'downloads' || colorBy === 'likes' || colorBy === 'trending_score') && (
+                      <select 
+                        value={colorScheme} 
+                        onChange={(e) => debouncedSetColorScheme(e.target.value as any)}
+                        className="control-select control-select-small"
+                        title="Color gradient style"
+                      >
+                        <option value="viridis">Viridis</option>
+                        <option value="plasma">Plasma</option>
+                        <option value="inferno">Inferno</option>
+                        <option value="coolwarm">Cool-Warm</option>
+                      </select>
+                    )}
+                  </div>
 
-              <span className="control-divider" />
+                  <span className="control-divider" />
 
-              {/* Show All Models Toggle */}
-              <div className="control-group">
-                <label className="control-toggle" title="Show all models (no sampling). When disabled, shows up to 150k models sampled proportionally by library, prioritizing base models and popular models.">
-                  <input
-                    type="checkbox"
-                    checked={showAllModels}
-                    onChange={(e) => setShowAllModels(e.target.checked)}
-                    className="control-checkbox"
-                  />
-                  <span className="control-toggle-label">Show All Models</span>
-                </label>
-                {!showAllModels && (
-                  <span className="control-info" title="Sampling strategy: Includes all base models, then adds popular derived models and diverse samples across libraries proportionally. Max 150k models for performance.">
-                    (Sampled)
-                  </span>
-                )}
-              </div>
+                  {/* Size by */}
+                  <div className="control-group">
+                    <Maximize2 size={14} className="control-icon" />
+                    <select 
+                      value={sizeBy} 
+                      onChange={(e) => debouncedSetSizeBy(e.target.value as SizeByOption)}
+                      className="control-select"
+                      title="Size points by attribute - Larger values = bigger points"
+                    >
+                      <option value="downloads">By Downloads</option>
+                      <option value="likes">By Likes</option>
+                      <option value="none">Uniform Size</option>
+                    </select>
+                  </div>
+
+                  <span className="control-divider" />
+
+                  {/* Stats summary */}
+                  <div className="control-stats" title="Number of models currently loaded and visible in the visualization">
+                    <Eye size={14} className="control-icon" />
+                    <span className="control-stats-text">
+                      {data.length.toLocaleString()} models
+                    </span>
+                  </div>
+
+                  <span className="control-divider" />
+
+                  {/* Show All Models Toggle */}
+                  <div className="control-group">
+                    <label className="control-toggle" title="Show all models (no sampling). When disabled, shows up to 150k models sampled proportionally by library, prioritizing base models and popular models.">
+                      <input
+                        type="checkbox"
+                        checked={showAllModels}
+                        onChange={(e) => setShowAllModels(e.target.checked)}
+                        className="control-checkbox"
+                      />
+                      <span className="control-toggle-label">Show All Models</span>
+                    </label>
+                    {!showAllModels && (
+                      <span className="control-info" title="Sampling strategy: Includes all base models, then adds popular derived models and diverse samples across libraries proportionally. Max 150k models for performance.">
+                        (Sampled)
+                      </span>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {vizMode === 'force-graph' && graphStats && (
+                <>
+                  <span className="control-divider" />
+                  <div className="control-stats" title="Network statistics">
+                    <Eye size={14} className="control-icon" />
+                    <span className="control-stats-text">
+                      {(graphStats.nodes || graphNodes.length).toLocaleString()} models, {(graphStats.edges || graphLinks.length).toLocaleString()} relationships
+                    </span>
+                  </div>
+                </>
+              )}
 
             </div>
 
@@ -734,39 +831,87 @@ function App() {
             <IntroModal onClose={() => setShowIntro(false)} />
           )}
           
-          {loading && <div className="loading">Loading models...</div>}
-          {error && <div className="error">Error: {error}</div>}
-          {!loading && !error && data.length === 0 && (
-            <div className="empty">No models match the filters</div>
-          )}
-          {!loading && !error && data.length > 0 && (
+          {vizMode === 'embeddings' ? (
+            /* Embedding Space View */
             <>
-              {viewMode === '3d' && (
+              {loading && <div className="loading">Loading models...</div>}
+              {error && <div className="error">Error: {error}</div>}
+              {!loading && !error && data.length === 0 && (
+                <div className="empty">No models match the filters</div>
+              )}
+              {!loading && !error && data.length > 0 && (
                 <>
-                  <ScatterPlot3D
-                    data={data}
-                    colorBy={colorBy}
-                    sizeBy={sizeBy}
-                    colorScheme={colorScheme}
-                    hoveredModel={null}
-                    onPointClick={handlePointClick}
-                    onHover={handleHover}
-                  />
+                  {viewMode === '3d' && (
+                    <ScatterPlot3D
+                      data={data}
+                      colorBy={colorBy}
+                      sizeBy={sizeBy}
+                      colorScheme={colorScheme}
+                      hoveredModel={null}
+                      onPointClick={handlePointClick}
+                      onHover={handleHover}
+                    />
+                  )}
+                  {viewMode === 'network' && (
+                    <NetworkGraph
+                      width={width}
+                      height={height}
+                      data={data}
+                      onNodeClick={(model) => {
+                        setSelectedModel(model);
+                        setIsModalOpen(true);
+                      }}
+                    />
+                  )}
+                  {viewMode === 'distribution' && (
+                    <DistributionView data={data} width={width} height={height} />
+                  )}
                 </>
               )}
-              {viewMode === 'network' && (
-                <NetworkGraph
-                  width={width}
-                  height={height}
-                  data={data}
-                  onNodeClick={(model) => {
-                    setSelectedModel(model);
-                    setIsModalOpen(true);
-                  }}
-                />
+            </>
+          ) : (
+            /* Force-Directed Graph View */
+            <>
+              {graphLoading && <div className="loading">Loading relationship graph...</div>}
+              {graphError && <div className="error">Error: {graphError}</div>}
+              {!graphLoading && !graphError && graphNodes.length === 0 && (
+                <div className="empty">Loading model relationships...</div>
               )}
-              {viewMode === 'distribution' && (
-                <DistributionView data={data} width={width} height={height} />
+              {!graphLoading && !graphError && graphNodes.length > 0 && (
+                <>
+                  {graphNodes.length > INSTANCED_THRESHOLD ? (
+                    <ForceDirectedGraph3DInstanced
+                      width={width}
+                      height={height}
+                      nodes={graphNodes}
+                      links={graphLinks}
+                      onNodeClick={handleGraphNodeClick}
+                      selectedNodeId={selectedNodeId}
+                      enabledEdgeTypes={enabledEdgeTypes}
+                      showLabels={false}
+                      maxVisibleNodes={500000}
+                      maxVisibleEdges={200000}
+                    />
+                  ) : (
+                    <ForceDirectedGraph3D
+                      width={width}
+                      height={height}
+                      nodes={graphNodes}
+                      links={graphLinks}
+                      onNodeClick={handleGraphNodeClick}
+                      selectedNodeId={selectedNodeId}
+                      enabledEdgeTypes={enabledEdgeTypes}
+                      showLabels={true}
+                    />
+                  )}
+                  {/* Graph Stats */}
+                  {graphStats && (
+                    <div className="graph-stats-overlay">
+                      <span>{(graphStats.nodes || graphNodes.length).toLocaleString()} models</span>
+                      <span>{(graphStats.edges || graphLinks.length).toLocaleString()} relationships</span>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
