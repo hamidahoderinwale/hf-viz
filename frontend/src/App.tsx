@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Palette, Maximize2, Eye, GitBranch, Box } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Palette, Maximize2, Eye, GitBranch, Circle } from 'lucide-react';
 import IntroModal from './components/ui/IntroModal';
 import ScatterPlot3D from './components/visualizations/ScatterPlot3D';
 import NetworkGraph from './components/visualizations/NetworkGraph';
@@ -675,7 +675,7 @@ function App() {
                   onClick={() => setVizMode('embeddings')}
                   title="View models in semantic embedding space"
                 >
-                  <Box size={14} />
+                  <Circle size={14} />
                   <span>Embeddings</span>
                 </button>
                 <button
