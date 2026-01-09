@@ -656,6 +656,41 @@
     min-width: 90px;
   }
 
+  /* Visualization Mode Toggle */
+  .viz-mode-toggle {
+    display: flex;
+    gap: 0;
+  }
+  
+  .viz-mode-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.65rem;
+    border: 1px solid var(--border-medium);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all var(--transition-base);
+    font-family: var(--font-primary);
+  }
+  
+  .viz-mode-btn:first-child {
+    border-right: none;
+  }
+  
+  .viz-mode-btn.active {
+    background: var(--accent-primary);
+    color: white;
+    border-color: var(--accent-primary);
+  }
+  
+  .viz-mode-btn:hover:not(.active) {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+
   .control-icon {
     color: var(--text-tertiary);
     flex-shrink: 0;
