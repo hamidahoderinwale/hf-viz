@@ -13,7 +13,7 @@ import ModelPopup from './components/ui/ModelPopup';
 import AnalyticsPage from './pages/AnalyticsPage';
 import FamiliesPage from './pages/FamiliesPage';
 import { fetchFullDerivativeNetwork, getAvailableEdgeTypes, EdgeType } from './utils/api/graphApi';
-import type { GraphNode } from './components/visualizations/ForceDirectedGraph';
+import type { GraphNode, GraphLink } from './components/visualizations/ForceDirectedGraph';
 // Types & Utils
 import { ModelPoint, Stats, SearchResult } from './types';
 import IntegratedSearch from './components/controls/IntegratedSearch';
@@ -93,7 +93,7 @@ function App() {
   
   // Force graph state
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
-  const [graphLinks, setGraphLinks] = useState<any[]>([]);
+  const [graphLinks, setGraphLinks] = useState<GraphLink[]>([]);
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [graphStats, setGraphStats] = useState<any>(null);
