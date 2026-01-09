@@ -1618,7 +1618,8 @@ async def get_family_network(
 @cached_response(ttl=3600, key_prefix="full_derivatives_network")
 async def get_full_derivative_network(
     edge_types: Optional[str] = Query(None, description="Comma-separated list of edge types to include (finetune,quantized,adapter,merge,parent). If None, includes all types."),
-    include_edge_attributes: bool = Query(False, description="Whether to include edge attributes (change in likes, downloads, etc.). Default False for performance.")
+    include_edge_attributes: bool = Query(False, description="Whether to include edge attributes (change in likes, downloads, etc.). Default False for performance."),
+    include_positions: bool = Query(True, description="Whether to include pre-computed 3D positions for each node. Default True for faster rendering.")
 ):
     """
     Build full derivative relationship network for ALL models in the database.
@@ -1626,6 +1627,7 @@ async def get_full_derivative_network(
     This computes over every single model in the database.
     
     Note: Edge attributes are disabled by default for performance with large datasets.
+    If pre-computed positions exist, they will be included in the response.
     """
     if df is None:
         raise DataNotLoadedError()
@@ -1652,10 +1654,26 @@ async def get_full_derivative_network(
         build_time = time.time() - start_time
         logger.info(f"Graph built in {build_time:.2f}s: {graph.number_of_nodes():,} nodes, {graph.number_of_edges():,} edges")
         
-        # Build nodes list
+        # Load pre-computed positions if available
+        precomputed_positions = {}
+        if include_positions:
+            try:
+                backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                root_dir = os.path.dirname(backend_dir)
+                layout_file = os.path.join(root_dir, "precomputed_data", "force_layout_3d.pkl")
+                
+                if os.path.exists(layout_file):
+                    with open(layout_file, 'rb') as f:
+                        layout_data = pickle.load(f)
+                        precomputed_positions = layout_data.get('positions', {})
+                        logger.info(f"Loaded {len(precomputed_positions):,} pre-computed positions")
+            except Exception as e:
+                logger.warning(f"Could not load pre-computed positions: {e}")
+        
+        # Build nodes list with optional pre-computed positions
         nodes = []
         for node_id, attrs in graph.nodes(data=True):
-            nodes.append({
+            node_data = {
                 "id": node_id,
                 "title": attrs.get('title', node_id),
                 "freq": attrs.get('freq', 0),
@@ -1663,7 +1681,16 @@ async def get_full_derivative_network(
                 "downloads": attrs.get('downloads', 0),
                 "library": attrs.get('library', ''),
                 "pipeline": attrs.get('pipeline', '')
-            })
+            }
+            
+            # Add pre-computed position if available
+            if node_id in precomputed_positions:
+                pos = precomputed_positions[node_id]
+                node_data['x'] = pos[0]
+                node_data['y'] = pos[1]
+                node_data['z'] = pos[2]
+            
+            nodes.append(node_data)
         
         logger.info(f"Processed {len(nodes):,} nodes")
         

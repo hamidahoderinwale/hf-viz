@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ForceDirectedGraph, { EdgeType, GraphNode } from '../components/visualizations/ForceDirectedGraph';
 import ForceDirectedGraph3D from '../components/visualizations/ForceDirectedGraph3D';
+import ForceDirectedGraph3DInstanced from '../components/visualizations/ForceDirectedGraph3DInstanced';
 import ScatterPlot3D from '../components/visualizations/ScatterPlot3D';
 import { fetchFamilyNetwork, fetchFullDerivativeNetwork, getAvailableEdgeTypes } from '../utils/api/graphApi';
 import LoadingProgress from '../components/ui/LoadingProgress';
@@ -10,6 +11,9 @@ import { API_BASE } from '../config/api';
 import './GraphPage.css';
 
 const ALL_EDGE_TYPES: EdgeType[] = ['finetune', 'quantized', 'adapter', 'merge', 'parent'];
+
+// Use instanced rendering threshold for large graphs
+const INSTANCED_THRESHOLD = 10000;
 
 type ViewMode = 'graph' | 'embedding' | 'graph3d';
 type GraphMode = 'family' | 'full';
@@ -451,16 +455,32 @@ export default function GraphPage() {
         ) : viewMode === 'graph3d' ? (
           <>
             <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-              <ForceDirectedGraph3D
-                width={dimensions.width}
-                height={dimensions.height}
-                nodes={nodes}
-                links={links}
-                onNodeClick={handleNodeClick}
-                selectedNodeId={selectedNodeId}
-                enabledEdgeTypes={enabledEdgeTypes}
-                showLabels={true}
-              />
+              {/* Use instanced rendering for large graphs (>10k nodes) */}
+              {nodes.length > INSTANCED_THRESHOLD ? (
+                <ForceDirectedGraph3DInstanced
+                  width={dimensions.width}
+                  height={dimensions.height}
+                  nodes={nodes}
+                  links={links}
+                  onNodeClick={handleNodeClick}
+                  selectedNodeId={selectedNodeId}
+                  enabledEdgeTypes={enabledEdgeTypes}
+                  showLabels={false}
+                  maxVisibleNodes={500000}
+                  maxVisibleEdges={200000}
+                />
+              ) : (
+                <ForceDirectedGraph3D
+                  width={dimensions.width}
+                  height={dimensions.height}
+                  nodes={nodes}
+                  links={links}
+                  onNodeClick={handleNodeClick}
+                  selectedNodeId={selectedNodeId}
+                  enabledEdgeTypes={enabledEdgeTypes}
+                  showLabels={true}
+                />
+              )}
             </div>
             <EdgeTypeLegend
               edgeTypes={ALL_EDGE_TYPES}
@@ -471,16 +491,22 @@ export default function GraphPage() {
               <div className="graph-stats">
                 <div className="stat-item">
                   <span className="stat-label">Nodes:</span>
-                  <span className="stat-value">{graphStats.nodes || nodes.length}</span>
+                  <span className="stat-value">{(graphStats.nodes || nodes.length).toLocaleString()}</span>
                 </div>
                 <div className="stat-item">
                   <span className="stat-label">Edges:</span>
-                  <span className="stat-value">{graphStats.edges || links.length}</span>
+                  <span className="stat-value">{(graphStats.edges || links.length).toLocaleString()}</span>
                 </div>
                 {graphStats.avg_degree && (
                   <div className="stat-item">
                     <span className="stat-label">Avg Degree:</span>
                     <span className="stat-value">{graphStats.avg_degree.toFixed(2)}</span>
+                  </div>
+                )}
+                {nodes.length > INSTANCED_THRESHOLD && (
+                  <div className="stat-item stat-info">
+                    <span className="stat-label">Rendering:</span>
+                    <span className="stat-value">Instanced (optimized)</span>
                   </div>
                 )}
               </div>
