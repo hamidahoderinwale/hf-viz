@@ -12,7 +12,6 @@ import LiveModelCounter from './components/ui/LiveModelCounter';
 import ModelPopup from './components/ui/ModelPopup';
 import AnalyticsPage from './pages/AnalyticsPage';
 import FamiliesPage from './pages/FamiliesPage';
-import GraphPage from './pages/GraphPage';
 import { fetchFullDerivativeNetwork, getAvailableEdgeTypes } from './utils/api/graphApi';
 import type { GraphNode, GraphLink, EdgeType } from './components/visualizations/ForceDirectedGraph';
 // Types & Utils
@@ -488,7 +487,7 @@ function App() {
     };
     
     loadForceGraph();
-  }, [vizMode, graphNodes.length]);
+  }, [vizMode]);
 
   // Handle force graph node click
   const handleGraphNodeClick = useCallback((node: GraphNode) => {
@@ -630,17 +629,6 @@ function App() {
               <button
                 onClick={() => {
                   setShowFamilies(false);
-                  setShowAnalytics(false);
-                  setShowGraph(true);
-                }}
-                className={`nav-tab ${showGraph ? 'active' : ''}`}
-                title="Force-directed graph showing model relationships and derivatives"
-              >
-                Graph
-              </button>
-              <button
-                onClick={() => {
-                  setShowFamilies(false);
                   setShowGraph(false);
                   setShowAnalytics(true);
                 }}
@@ -669,8 +657,6 @@ function App() {
               <AnalyticsPage />
             ) : showFamilies ? (
               <FamiliesPage />
-            ) : showGraph ? (
-              <GraphPage />
             ) : (
       <div className="visualization-layout">
         <div className="control-bar">
