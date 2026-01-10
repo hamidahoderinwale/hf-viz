@@ -99,7 +99,7 @@ function App() {
   const [graphError, setGraphError] = useState<string | null>(null);
   const [graphStats, setGraphStats] = useState<{ nodes: number; edges: number } | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [enabledEdgeTypes, setEnabledEdgeTypes] = useState<Set<EdgeType>>(new Set(['finetune', 'quantized', 'adapter', 'merge', 'parent']));
+  const [enabledEdgeTypes, setEnabledEdgeTypes] = useState<Set<EdgeType>>(new Set(['finetune', 'quantized', 'adapter', 'merge', 'parent'] as EdgeType[]));
   
   // Threshold for using instanced rendering
   const INSTANCED_THRESHOLD = 10000;
