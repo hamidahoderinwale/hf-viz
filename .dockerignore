@@ -1,49 +1,19 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
+# Ignore unnecessary files for Docker build
+node_modules/
 venv/
-env/
-ENV/
-.venv
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Git
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.log
 .git/
 .gitignore
-
-# Frontend
-frontend/node_modules/
-frontend/build/
-frontend/.env.local
-frontend/.env.development.local
-frontend/.env.test.local
-frontend/.env.production.local
-
-# Keep cache files for fast startup (precomputed UMAP)
-# cache/*.pkl  # INCLUDED for HF Spaces deployment
-# cache/*.npy  # INCLUDED for HF Spaces deployment
-
-# Documentation
 *.md
 !README.md
-
-# Deployment
-.netlify/
-netlify-functions/
-
-# Logs
-*.log
-
+!README_SPACE.md
+precomputed_data/*.parquet
+precomputed_data/*.pkl
+cache/
+*.db
+.DS_Store

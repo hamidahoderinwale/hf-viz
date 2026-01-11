@@ -1,0 +1,88 @@
+.edge-type-filter {
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.edge-type-filter h4 {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary, #9ca3af);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.edge-type-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.edge-type-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.edge-type-item.disabled {
+  opacity: 0.4;
+}
+
+.edge-type-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.edge-type-label {
+  font-size: 13px;
+  color: var(--text-primary, #ffffff);
+}
+
+.edge-type-item.disabled .edge-type-color {
+  opacity: 0.5;
+}
+
+.edge-type-item.disabled .edge-type-label {
+  opacity: 0.6;
+}
+
+/* Compact version for control bar */
+.edge-type-filter-compact {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.edge-type-toggle {
+  padding: 4px 10px;
+  border: 1px solid;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--text-primary, #ffffff);
+  background: transparent;
+  white-space: nowrap;
+}
+
+.edge-type-toggle:hover {
+  opacity: 0.8;
+}
+
+.edge-type-toggle.active {
+  opacity: 1;
+}
+
+.edge-type-toggle-label {
+  pointer-events: none;
+}
+

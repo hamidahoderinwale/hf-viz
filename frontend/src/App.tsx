@@ -17,6 +17,8 @@ import type { GraphNode, GraphLink, EdgeType } from './components/visualizations
 // Types & Utils
 import { ModelPoint, Stats, SearchResult } from './types';
 import IntegratedSearch from './components/controls/IntegratedSearch';
+import EdgeTypeFilter from './components/controls/EdgeTypeFilter';
+import ForceParameterControls from './components/controls/ForceParameterControls';
 import cache, { IndexedDBCache } from './utils/data/indexedDB';
 import { debounce } from './utils/debounce';
 import requestManager from './utils/api/requestManager';
@@ -100,6 +102,14 @@ function App() {
   const [graphStats, setGraphStats] = useState<{ nodes: number; edges: number } | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [enabledEdgeTypes, setEnabledEdgeTypes] = useState<Set<EdgeType>>(new Set(['finetune', 'quantized', 'adapter', 'merge', 'parent'] as EdgeType[]));
+  const [availableEdgeTypes, setAvailableEdgeTypes] = useState<EdgeType[]>(['finetune', 'quantized', 'adapter', 'merge', 'parent']);
+  
+  // Force graph parameters
+  const [linkDistance, setLinkDistance] = useState(100);
+  const [chargeStrength, setChargeStrength] = useState(-300);
+  const [collisionRadius, setCollisionRadius] = useState(1.0);
+  const [nodeSizeMultiplier, setNodeSizeMultiplier] = useState(1.0);
+  const [edgeOpacity, setEdgeOpacity] = useState(0.6);
   
   // Threshold for using instanced rendering
   const INSTANCED_THRESHOLD = 10000;
@@ -482,6 +492,7 @@ function App() {
         if (data.links && data.links.length > 0) {
           const availableTypes = getAvailableEdgeTypes(data.links);
           if (availableTypes.size > 0) {
+            setAvailableEdgeTypes(Array.from(availableTypes));
             setEnabledEdgeTypes(availableTypes);
           }
         }
@@ -695,7 +706,7 @@ function App() {
                     title="View model relationships as a force-directed graph"
                   >
                     <GitBranch size={14} />
-                    <span>Relationships</span>
+                    <span>Force-directed graph</span>
                   </button>
                 </div>
               )}
@@ -781,14 +792,62 @@ function App() {
                 </>
               )}
 
-              {/* Force graph stats - only show for force-graph mode */}
-              {vizMode === 'force-graph' && !showAnalytics && !showFamilies && !showGraph && graphStats && (
-                <div className="control-stats" title="Number of models and relationships in the force graph">
-                  <GitBranch size={14} className="control-icon" />
-                  <span className="control-stats-text">
-                    {(graphStats.nodes || graphNodes.length).toLocaleString()} models, {(graphStats.edges || graphLinks.length).toLocaleString()} relationships
-                  </span>
-                </div>
+              {/* Force graph controls - only show for force-graph mode */}
+              {vizMode === 'force-graph' && !showAnalytics && !showFamilies && !showGraph && (
+                <>
+                  {/* Edge type filter */}
+                  {availableEdgeTypes.length > 0 && (
+                    <>
+                      <div className="control-group">
+                        <EdgeTypeFilter
+                          edgeTypes={availableEdgeTypes}
+                          enabledTypes={enabledEdgeTypes}
+                          onToggle={(type) => {
+                            setEnabledEdgeTypes(prev => {
+                              const next = new Set(prev);
+                              if (next.has(type)) {
+                                next.delete(type);
+                              } else {
+                                next.add(type);
+                              }
+                              return next;
+                            });
+                          }}
+                          compact={true}
+                        />
+                      </div>
+                      <span className="control-divider" />
+                    </>
+                  )}
+
+                  {/* Force parameter controls */}
+                  <div className="control-group">
+                    <ForceParameterControls
+                      linkDistance={linkDistance}
+                      chargeStrength={chargeStrength}
+                      collisionRadius={collisionRadius}
+                      nodeSizeMultiplier={nodeSizeMultiplier}
+                      edgeOpacity={edgeOpacity}
+                      onLinkDistanceChange={setLinkDistance}
+                      onChargeStrengthChange={setChargeStrength}
+                      onCollisionRadiusChange={setCollisionRadius}
+                      onNodeSizeMultiplierChange={setNodeSizeMultiplier}
+                      onEdgeOpacityChange={setEdgeOpacity}
+                    />
+                  </div>
+
+                  <span className="control-divider" />
+
+                  {/* Force graph stats */}
+                  {graphStats && (
+                    <div className="control-stats" title="Number of models and relationships in the force graph">
+                      <GitBranch size={14} className="control-icon" />
+                      <span className="control-stats-text">
+                        {(graphStats.nodes || graphNodes.length).toLocaleString()} models, {(graphStats.edges || graphLinks.length).toLocaleString()} relationships
+                      </span>
+                    </div>
+                  )}
+                </>
               )}
 
             </div>
@@ -901,6 +960,11 @@ function App() {
                       showLabels={false}
                       maxVisibleNodes={500000}
                       maxVisibleEdges={200000}
+                      linkDistance={linkDistance}
+                      chargeStrength={chargeStrength}
+                      collisionRadius={collisionRadius}
+                      nodeSizeMultiplier={nodeSizeMultiplier}
+                      edgeOpacity={edgeOpacity}
                     />
                   ) : (
                     <ForceDirectedGraph3D
@@ -912,6 +976,11 @@ function App() {
                       selectedNodeId={selectedNodeId}
                       enabledEdgeTypes={enabledEdgeTypes}
                       showLabels={true}
+                      linkDistance={linkDistance}
+                      chargeStrength={chargeStrength}
+                      collisionRadius={collisionRadius}
+                      nodeSizeMultiplier={nodeSizeMultiplier}
+                      edgeOpacity={edgeOpacity}
                     />
                   )}
                 </>

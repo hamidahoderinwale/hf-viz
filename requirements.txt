@@ -1,0 +1,9 @@
+# Hugging Face Spaces Requirements
+# This file is used by HF Spaces for deployment
+
+# Copy from backend requirements
+-r backend/requirements.txt
+
+# Additional Space-specific requirements
+gradio>=4.0.0
+

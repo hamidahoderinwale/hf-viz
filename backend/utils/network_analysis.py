@@ -454,41 +454,63 @@ class ModelNetworkBuilder:
         """
         graph = nx.DiGraph()
         
+        # Check if dataframe is empty
+        if self.df.empty:
+            return graph
+        
         # Add all models as nodes first
-        for idx, row in self.df.iterrows():
-            model_id = str(row.get('model_id', idx))
-            graph.add_node(model_id)
-            graph.nodes[model_id]['title'] = self._format_title(model_id)
-            graph.nodes[model_id]['freq'] = int(row.get('downloads', 0))
-            graph.nodes[model_id]['likes'] = int(row.get('likes', 0))
-            graph.nodes[model_id]['downloads'] = int(row.get('downloads', 0))
-            graph.nodes[model_id]['library'] = str(row.get('library_name', '')) if pd.notna(row.get('library_name')) else ''
-            graph.nodes[model_id]['pipeline'] = str(row.get('pipeline_tag', '')) if pd.notna(row.get('pipeline_tag')) else ''
-            
-            createdAt = row.get('createdAt')
-            if pd.notna(createdAt):
-                graph.nodes[model_id]['createdAt'] = str(createdAt)
+        try:
+            for idx, row in self.df.iterrows():
+                try:
+                    model_id = str(row.get('model_id', idx))
+                    graph.add_node(model_id)
+                    graph.nodes[model_id]['title'] = self._format_title(model_id)
+                    graph.nodes[model_id]['freq'] = int(row.get('downloads', 0) or 0)
+                    graph.nodes[model_id]['likes'] = int(row.get('likes', 0) or 0)
+                    graph.nodes[model_id]['downloads'] = int(row.get('downloads', 0) or 0)
+                    graph.nodes[model_id]['library'] = str(row.get('library_name', '')) if pd.notna(row.get('library_name')) else ''
+                    graph.nodes[model_id]['pipeline'] = str(row.get('pipeline_tag', '')) if pd.notna(row.get('pipeline_tag')) else ''
+                    
+                    createdAt = row.get('createdAt')
+                    if pd.notna(createdAt):
+                        graph.nodes[model_id]['createdAt'] = str(createdAt)
+                except Exception as node_error:
+                    # Skip problematic rows but continue processing
+                    continue
+        except Exception as e:
+            raise ValueError(f"Error adding nodes to graph: {str(e)}")
         
         # Add all derivative relationship edges
-        for idx, row in self.df.iterrows():
-            model_id = str(row.get('model_id', idx))
-            all_parents = _get_all_parents(row)
-            
-            for rel_type, parent_list in all_parents.items():
-                if filter_edge_types and rel_type not in filter_edge_types:
+        try:
+            for idx, row in self.df.iterrows():
+                try:
+                    model_id = str(row.get('model_id', idx))
+                    all_parents = _get_all_parents(row)
+                    
+                    for rel_type, parent_list in all_parents.items():
+                        if filter_edge_types and rel_type not in filter_edge_types:
+                            continue
+                        
+                        for parent_id in parent_list:
+                            # Only add edge if parent exists in the dataset
+                            if parent_id in graph:
+                                if not graph.has_edge(parent_id, model_id):
+                                    graph.add_edge(parent_id, model_id)
+                                    graph[parent_id][model_id]['edge_types'] = [rel_type]
+                                    graph[parent_id][model_id]['edge_type'] = rel_type
+                                else:
+                                    # Multiple relationship types between same nodes
+                                    existing_types = graph[parent_id][model_id].get('edge_types', [])
+                                    if not isinstance(existing_types, list):
+                                        existing_types = [existing_types] if existing_types else []
+                                    if rel_type not in existing_types:
+                                        existing_types.append(rel_type)
+                                        graph[parent_id][model_id]['edge_types'] = existing_types
+                except Exception as edge_error:
+                    # Skip problematic rows but continue processing
                     continue
-                
-                for parent_id in parent_list:
-                    # Only add edge if parent exists in the dataset
-                    if parent_id in graph:
-                        if not graph.has_edge(parent_id, model_id):
-                            graph.add_edge(parent_id, model_id)
-                            graph[parent_id][model_id]['edge_types'] = [rel_type]
-                            graph[parent_id][model_id]['edge_type'] = rel_type
-                        else:
-                            # Multiple relationship types between same nodes
-                            if rel_type not in graph[parent_id][model_id].get('edge_types', []):
-                                graph[parent_id][model_id]['edge_types'].append(rel_type)
+        except Exception as e:
+            raise ValueError(f"Error adding edges to graph: {str(e)}")
         
         if include_edge_attributes:
             self._add_edge_attributes(graph)

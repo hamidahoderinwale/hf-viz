@@ -32,6 +32,9 @@ COPY --chown=user backend/ /app/backend/
 # Copy frontend build
 COPY --from=frontend-builder --chown=user /frontend/build /app/frontend/build
 
+# Copy app.py (HF Spaces entry point)
+COPY --chown=user app.py /app/
+
 # Create directories for runtime data  
 RUN mkdir -p /app/precomputed_data /app/cache && chown -R user:user /app/precomputed_data /app/cache
 
@@ -49,7 +52,7 @@ ENV ALLOW_ALL_ORIGINS=true
 ENV SAMPLE_SIZE=50000
 ENV HF_PRECOMPUTED_DATASET=modelbiome/hf-viz-precomputed
 
-WORKDIR /app/backend
+WORKDIR /app
 EXPOSE 7860
 
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["python", "app.py"]

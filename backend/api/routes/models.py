@@ -106,41 +106,98 @@ async def get_models(
             filtered_df = filtered_df.sample(n=effective_max_points, random_state=42).reset_index(drop=True)
     
     # Determine which embeddings to use
+    # Check if we need to load embeddings from chunked storage
+    use_chunked_mode = (deps.chunked_embedding_loader is not None and deps.embeddings is None)
+    
     if use_graph_embeddings and deps.combined_embeddings is not None:
         current_embeddings = deps.combined_embeddings
         current_reduced = deps.reduced_embeddings_graph
         embedding_type = "graph-aware"
+    elif use_chunked_mode:
+        # Chunked mode: load embeddings only for filtered models
+        logger.debug(f"Loading embeddings for {len(filtered_df)} filtered models using chunked loader")
+        filtered_model_ids_list = filtered_df['model_id'].astype(str).tolist()
+        try:
+            current_embeddings, found_model_ids = deps.chunked_embedding_loader.load_embeddings_for_models(
+                filtered_model_ids_list
+            )
+            if len(current_embeddings) == 0:
+                raise EmbeddingsNotReadyError("No embeddings found for filtered models")
+            
+            # Filter dataframe to only include models with embeddings found
+            filtered_df = filtered_df[filtered_df['model_id'].astype(str).isin(found_model_ids)]
+            logger.debug(f"Loaded embeddings for {len(found_model_ids)} models")
+            embedding_type = "text-only (chunked)"
+            
+            # Use pre-computed coordinates from dataframe
+            if 'x_3d' in filtered_df.columns and 'y_3d' in filtered_df.columns and 'z_3d' in filtered_df.columns:
+                current_reduced = np.column_stack([
+                    filtered_df['x_3d'].values,
+                    filtered_df['y_3d'].values,
+                    filtered_df['z_3d'].values
+                ])
+            else:
+                current_reduced = None  # Will compute below
+        except Exception as e:
+            logger.error(f"Failed to load embeddings from chunked loader: {e}")
+            raise EmbeddingsNotReadyError(f"Failed to load chunked embeddings: {e}")
     else:
+        # Standard mode: use pre-loaded embeddings
         if deps.embeddings is None:
-            raise EmbeddingsNotReadyError()
+            raise EmbeddingsNotReadyError("Embeddings not loaded and chunked loader not available")
         current_embeddings = deps.embeddings
         current_reduced = deps.reduced_embeddings
         embedding_type = "text-only"
     
     # Handle reduced embeddings loading/generation
-    reducer = deps.reducer
-    if current_reduced is None or (reducer and reducer.method != projection_method.lower()):
-        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        root_dir = os.path.dirname(backend_dir)
-        cache_dir = os.path.join(root_dir, "cache")
-        cache_suffix = "_graph" if use_graph_embeddings and deps.combined_embeddings is not None else ""
-        reduced_cache = os.path.join(cache_dir, f"reduced_{projection_method.lower()}_3d{cache_suffix}.pkl")
-        reducer_cache = os.path.join(cache_dir, f"reducer_{projection_method.lower()}_3d{cache_suffix}.pkl")
-        
-        if os.path.exists(reduced_cache) and os.path.exists(reducer_cache):
-            try:
-                with open(reduced_cache, 'rb') as f:
-                    current_reduced = pickle.load(f)
+    # If using chunked mode, coordinates should already be set from dataframe above
+    # Otherwise, compute or load from cache
+    if use_chunked_mode and current_reduced is not None:
+        # Already set from dataframe coordinates above
+        logger.debug("Using pre-computed coordinates from dataframe")
+    elif use_chunked_mode and current_reduced is None:
+        # Fallback: compute reduced embeddings if coordinates not available
+        logger.warning("Pre-computed coordinates not found, computing reduced embeddings")
+        reducer = deps.reducer
+        if reducer is None:
+            reducer = DimensionReducer(method=projection_method.lower(), n_components=3)
+        if projection_method.lower() == "umap":
+            reducer.reducer = UMAP(
+                n_components=3,
+                n_neighbors=30,
+                min_dist=0.3,
+                metric='cosine',
+                random_state=42,
+                n_jobs=-1,
+                low_memory=True,
+                spread=1.5
+            )
+        current_reduced = reducer.fit_transform(current_embeddings)
+    else:
+        # Standard path: use cached or compute reduced embeddings
+        reducer = deps.reducer
+        if current_reduced is None or (reducer and reducer.method != projection_method.lower()):
+            backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            root_dir = os.path.dirname(backend_dir)
+            cache_dir = os.path.join(root_dir, "cache")
+            cache_suffix = "_graph" if use_graph_embeddings and deps.combined_embeddings is not None else ""
+            reduced_cache = os.path.join(cache_dir, f"reduced_{projection_method.lower()}_3d{cache_suffix}.pkl")
+            reducer_cache = os.path.join(cache_dir, f"reducer_{projection_method.lower()}_3d{cache_suffix}.pkl")
+            
+            if os.path.exists(reduced_cache) and os.path.exists(reducer_cache):
+                try:
+                    with open(reduced_cache, 'rb') as f:
+                        current_reduced = pickle.load(f)
+                    if reducer is None or reducer.method != projection_method.lower():
+                        reducer = DimensionReducer(method=projection_method.lower(), n_components=3)
+                    reducer.load_reducer(reducer_cache)
+                except (IOError, pickle.UnpicklingError, EOFError) as e:
+                    logger.warning(f"Failed to load cached reduced embeddings: {e}")
+                    current_reduced = None
+            
+            if current_reduced is None:
                 if reducer is None or reducer.method != projection_method.lower():
                     reducer = DimensionReducer(method=projection_method.lower(), n_components=3)
-                reducer.load_reducer(reducer_cache)
-            except (IOError, pickle.UnpicklingError, EOFError) as e:
-                logger.warning(f"Failed to load cached reduced embeddings: {e}")
-                current_reduced = None
-        
-        if current_reduced is None:
-            if reducer is None or reducer.method != projection_method.lower():
-                reducer = DimensionReducer(method=projection_method.lower(), n_components=3)
                 if projection_method.lower() == "umap":
                     reducer.reducer = UMAP(
                         n_components=3,
@@ -152,52 +209,58 @@ async def get_models(
                         low_memory=True,
                         spread=1.5
                     )
-            current_reduced = reducer.fit_transform(current_embeddings)
-            with open(reduced_cache, 'wb') as f:
-                pickle.dump(current_reduced, f)
-            reducer.save_reducer(reducer_cache)
-            
-            # Update global variable
-            if use_graph_embeddings and deps.combined_embeddings is not None:
-                deps.reduced_embeddings_graph = current_reduced
-            else:
-                deps.reduced_embeddings = current_reduced
+                current_reduced = reducer.fit_transform(current_embeddings)
+                with open(reduced_cache, 'wb') as f:
+                    pickle.dump(current_reduced, f)
+                reducer.save_reducer(reducer_cache)
+                
+                # Update global variable
+                if use_graph_embeddings and deps.combined_embeddings is not None:
+                    deps.reduced_embeddings_graph = current_reduced
+                else:
+                    deps.reduced_embeddings = current_reduced
     
-    # Get indices for filtered data
-    filtered_model_ids = filtered_df['model_id'].astype(str).values
-    
-    if df.index.name == 'model_id' or 'model_id' in df.index.names:
-        filtered_indices = []
-        for model_id in filtered_model_ids:
-            try:
-                pos = df.index.get_loc(model_id)
-                if isinstance(pos, (int, np.integer)):
-                    filtered_indices.append(int(pos))
-                elif isinstance(pos, (slice, np.ndarray)):
-                    if isinstance(pos, slice):
-                        filtered_indices.append(int(pos.start))
-                    else:
-                        filtered_indices.append(int(pos[0]))
-            except (KeyError, TypeError):
-                continue
-        filtered_indices = np.array(filtered_indices, dtype=np.int32)
+    # Get coordinates for filtered data
+    # If using chunked mode, coordinates are already extracted from filtered dataframe
+    if use_chunked_mode:
+        # Coordinates already extracted from filtered_df above
+        filtered_reduced = current_reduced
     else:
-        df_model_ids = df['model_id'].astype(str).values
-        model_id_to_pos = {mid: pos for pos, mid in enumerate(df_model_ids)}
-        filtered_indices = np.array([
-            model_id_to_pos[mid] for mid in filtered_model_ids 
-            if mid in model_id_to_pos
-        ], dtype=np.int32)
-    
-    if len(filtered_indices) == 0:
-        return {
-            "models": [],
-            "embedding_type": embedding_type,
-            "filtered_count": filtered_count,
-            "returned_count": 0
-        }
-    
-    filtered_reduced = current_reduced[filtered_indices]
+        # Standard path: get indices and extract from full reduced embeddings
+        filtered_model_ids = filtered_df['model_id'].astype(str).values
+        
+        if df.index.name == 'model_id' or 'model_id' in df.index.names:
+            filtered_indices = []
+            for model_id in filtered_model_ids:
+                try:
+                    pos = df.index.get_loc(model_id)
+                    if isinstance(pos, (int, np.integer)):
+                        filtered_indices.append(int(pos))
+                    elif isinstance(pos, (slice, np.ndarray)):
+                        if isinstance(pos, slice):
+                            filtered_indices.append(int(pos.start))
+                        else:
+                            filtered_indices.append(int(pos[0]))
+                except (KeyError, TypeError):
+                    continue
+            filtered_indices = np.array(filtered_indices, dtype=np.int32)
+        else:
+            df_model_ids = df['model_id'].astype(str).values
+            model_id_to_pos = {mid: pos for pos, mid in enumerate(df_model_ids)}
+            filtered_indices = np.array([
+                model_id_to_pos[mid] for mid in filtered_model_ids 
+                if mid in model_id_to_pos
+            ], dtype=np.int32)
+        
+        if len(filtered_indices) == 0:
+            return {
+                "models": [],
+                "embedding_type": embedding_type,
+                "filtered_count": filtered_count,
+                "returned_count": 0
+            }
+        
+        filtered_reduced = current_reduced[filtered_indices]
     family_depths = calculate_family_depths(df)
     
     global cluster_labels

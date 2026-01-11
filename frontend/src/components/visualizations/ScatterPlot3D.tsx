@@ -138,7 +138,28 @@ function ColoredPoints({
     return geo;
   }, [geometryData]);
 
-  // Create material
+  // Create circular sprite texture for rounded points
+  const pointTexture = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const context = canvas.getContext('2d')!;
+    
+    // Create circular gradient for smooth rounded edges
+    const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.8)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 64, 64);
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    return texture;
+  }, []);
+
+  // Create material with circular sprite
   const material = useMemo(() => {
     return new THREE.PointsMaterial({
       size: 0.15,
@@ -146,8 +167,10 @@ function ColoredPoints({
       sizeAttenuation: true,
       transparent: true,
       opacity: 0.9,
+      map: pointTexture,
+      alphaTest: 0.1, // Discard transparent pixels for better performance
     });
-  }, []);
+  }, [pointTexture]);
 
   // Handle click
   const handleClick = (event: any) => {

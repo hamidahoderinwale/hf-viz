@@ -2,6 +2,7 @@
 Loader for pre-computed embeddings and UMAP coordinates.
 This module provides fast loading of pre-computed data from Parquet files.
 Supports downloading from HuggingFace Hub if local files are not available.
+Supports chunked embeddings for scalable loading.
 """
 
 import os
@@ -14,6 +15,14 @@ import pandas as pd
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Try to import chunked loader
+try:
+    from utils.chunked_loader import ChunkedEmbeddingLoader
+    CHUNKED_LOADER_AVAILABLE = True
+except ImportError:
+    CHUNKED_LOADER_AVAILABLE = False
+    logger.debug("ChunkedEmbeddingLoader not available")
 
 # HuggingFace dataset for precomputed data
 HF_PRECOMPUTED_DATASET = os.getenv("HF_PRECOMPUTED_DATASET", "modelbiome/hf-viz-precomputed")
@@ -64,6 +73,28 @@ class PrecomputedDataLoader:
             metadata_file.exists() and
             models_file.exists()
         )
+    
+    def is_chunked(self) -> bool:
+        """Check if chunked embeddings are available."""
+        chunk_index_file = self.data_dir / f"chunk_index_{self.version}.parquet"
+        return chunk_index_file.exists()
+    
+    def get_chunked_loader(self) -> Optional['ChunkedEmbeddingLoader']:
+        """Get chunked embedding loader if available."""
+        if not CHUNKED_LOADER_AVAILABLE:
+            return None
+        
+        if not self.is_chunked():
+            return None
+        
+        try:
+            return ChunkedEmbeddingLoader(
+                data_dir=str(self.data_dir),
+                version=self.version
+            )
+        except Exception as e:
+            logger.warning(f"Failed to initialize chunked loader: {e}")
+            return None
     
     def load_models(self) -> pd.DataFrame:
         """
@@ -118,9 +149,14 @@ class PrecomputedDataLoader:
         
         return embeddings, model_ids
     
-    def load_all(self) -> Tuple[pd.DataFrame, Optional[np.ndarray], Dict]:
+    def load_all(self, load_embeddings: bool = False) -> Tuple[pd.DataFrame, Optional[np.ndarray], Dict]:
         """
         Load all pre-computed data.
+        
+        Args:
+            load_embeddings: If True, load all embeddings (memory intensive).
+                           If False and chunked data available, embeddings will be None
+                           and should be loaded on-demand using chunked loader.
         
         Returns:
             Tuple of (models_df, embeddings_array_or_None, metadata_dict)
@@ -128,13 +164,19 @@ class PrecomputedDataLoader:
         metadata = self.load_metadata()
         df = self.load_models()
         
-        # Try to load embeddings, but they're optional
-        embeddings_file = self.data_dir / f"embeddings_{self.version}.parquet"
-        if embeddings_file.exists():
-            embeddings, _ = self.load_embeddings()
-        else:
-            logger.info("Embeddings file not found, skipping...")
+        # Check if chunked embeddings are available
+        if self.is_chunked() and not load_embeddings:
+            logger.info("Chunked embeddings detected - skipping full embedding load for fast startup")
+            logger.info("Embeddings will be loaded on-demand using chunked loader")
             embeddings = None
+        else:
+            # Try to load embeddings, but they're optional
+            embeddings_file = self.data_dir / f"embeddings_{self.version}.parquet"
+            if embeddings_file.exists():
+                embeddings, _ = self.load_embeddings()
+            else:
+                logger.info("Embeddings file not found, skipping...")
+                embeddings = None
         
         return df, embeddings, metadata
 
@@ -193,17 +235,53 @@ def download_from_hf_hub(data_dir: str, version: str = "v1") -> bool:
             logger.warning(f"Could not download models parquet: {e}")
             return False
         
-        # Optionally download embeddings
+        # Try to download chunked data first (preferred for large datasets)
+        chunks_downloaded = 0
         try:
+            # Download chunk index
             hf_hub_download(
                 repo_id=dataset_id,
-                filename=f"embeddings_{version}.parquet",
+                filename=f"chunk_index_{version}.parquet",
                 repo_type="dataset",
                 local_dir=data_dir
             )
-            logger.info("Downloaded embeddings parquet")
-        except Exception:
-            logger.info("Embeddings file not available (optional)")
+            logger.info("Downloaded chunk index")
+            
+            # Try to determine number of chunks from metadata or by trying chunks
+            # Download chunk files (try up to 100 chunks)
+            chunk_id = 0
+            max_chunks_to_try = 100
+            while chunk_id < max_chunks_to_try:
+                try:
+                    hf_hub_download(
+                        repo_id=dataset_id,
+                        filename=f"embeddings_chunk_{chunk_id:03d}_{version}.parquet",
+                        repo_type="dataset",
+                        local_dir=data_dir
+                    )
+                    chunks_downloaded += 1
+                    chunk_id += 1
+                except Exception:
+                    # No more chunks
+                    break
+            
+            if chunks_downloaded > 0:
+                logger.info(f"Downloaded {chunks_downloaded} embedding chunks")
+        except Exception as e:
+            logger.info(f"Chunked embeddings not available: {e}")
+        
+        # Fallback: Try to download single embeddings file if chunks not available
+        if chunks_downloaded == 0:
+            try:
+                hf_hub_download(
+                    repo_id=dataset_id,
+                    filename=f"embeddings_{version}.parquet",
+                    repo_type="dataset",
+                    local_dir=data_dir
+                )
+                logger.info("Downloaded single embeddings parquet file")
+            except Exception:
+                logger.info("Single embeddings file not available either")
         
         return True
         

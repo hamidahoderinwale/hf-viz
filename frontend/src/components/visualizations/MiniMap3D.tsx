@@ -4,6 +4,23 @@ import * as THREE from 'three';
 import { ModelPoint } from '../../types';
 import { getCategoricalColorMap, getContinuousColorScale, getDepthColorScale } from '../../utils/rendering/colors';
 
+// Create circular sprite texture helper for rounded points
+function createCircularPointTexture(): THREE.Texture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const context = canvas.getContext('2d')!;
+  const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.8)');
+  gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 64, 64);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
 interface MiniMap3DProps {
   width?: number;
   height?: number;
@@ -112,6 +129,8 @@ function MiniMapPoints({
         transparent
         opacity={0.7}
         sizeAttenuation={false}
+        map={useMemo(() => createCircularPointTexture(), [])}
+        alphaTest={0.1}
       />
     </points>
   );

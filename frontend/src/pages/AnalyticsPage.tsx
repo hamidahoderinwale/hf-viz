@@ -80,19 +80,47 @@ export default function AnalyticsPage() {
         
         // Group by family (using parent_model or model_id prefix)
         setLoadingProgress(90);
-        const familyMap = new Map<string, number>();
+        const familyMap = new Map<string, { count: number; models: TopModel[] }>();
         models.forEach(model => {
           // Extract family name from model_id (e.g., "meta-llama/Meta-Llama-3" -> "meta-llama")
           const family = model.model_id.split('/')[0];
-          familyMap.set(family, (familyMap.get(family) || 0) + 1);
+          if (!familyMap.has(family)) {
+            familyMap.set(family, { count: 0, models: [] });
+          }
+          const familyData = familyMap.get(family)!;
+          familyData.count += 1;
+          familyData.models.push(model);
         });
         
+        // Calculate growth rate based on recent model creation
+        const now = Date.now();
+        const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
+        
         const families: Family[] = Array.from(familyMap.entries())
-          .map(([family, count]) => ({ family, count }))
+          .map(([family, data]) => {
+            // Calculate growth rate: percentage of models created in last 30 days
+            const recentModels = data.models.filter(m => {
+              if (!m.created_at) return false;
+              const created = new Date(m.created_at).getTime();
+              return created >= thirtyDaysAgo;
+            });
+            const growthRate = data.count > 0 ? (recentModels.length / data.count) * 100 : 0;
+            
+            return { 
+              family, 
+              count: data.count,
+              growth_rate: growthRate
+            };
+          })
           .sort((a, b) => b.count - a.count)
           .slice(0, 20);
         setLargestFamilies(families);
-        setFastestGrowing(families); // TODO: Calculate actual growth rate
+        
+        // Sort by growth rate for fastest growing
+        const fastestGrowing = [...families]
+          .sort((a, b) => (b.growth_rate || 0) - (a.growth_rate || 0))
+          .slice(0, 20);
+        setFastestGrowing(fastestGrowing);
         
         setLoadingProgress(100);
         setLoading(false);
@@ -281,6 +309,7 @@ export default function AnalyticsPage() {
                   <th>Rank</th>
                   <th>Family</th>
                   <th>Model Count</th>
+                  <th>Growth Rate (30d)</th>
                 </tr>
               </thead>
               <tbody>
@@ -290,10 +319,11 @@ export default function AnalyticsPage() {
                       <td>{idx + 1}</td>
                       <td>{family.family}</td>
                       <td>{family.count.toLocaleString()}</td>
+                      <td>{family.growth_rate !== undefined ? `${family.growth_rate.toFixed(1)}%` : 'N/A'}</td>
                     </tr>
                   ))
                 ) : (
-                  <tr><td colSpan={3} className="placeholder">Loading...</td></tr>
+                  <tr><td colSpan={4} className="placeholder">Loading...</td></tr>
                 )}
               </tbody>
             </table>

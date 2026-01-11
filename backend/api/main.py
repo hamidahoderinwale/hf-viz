@@ -126,8 +126,25 @@ async def startup_event():
         logger.info("=" * 60)
         
         try:
-            # Load everything in seconds
-            deps.df, deps.embeddings, metadata = precomputed_loader.load_all()
+            # Check if chunked embeddings are available
+            is_chunked = precomputed_loader.is_chunked()
+            
+            # Load data - don't load embeddings if chunked (load on-demand instead)
+            load_embeddings_at_startup = not is_chunked  # Only load if not chunked
+            deps.df, deps.embeddings, metadata = precomputed_loader.load_all(
+                load_embeddings=load_embeddings_at_startup
+            )
+            
+            # Initialize chunked loader if chunked data is available
+            if is_chunked:
+                chunked_loader = precomputed_loader.get_chunked_loader()
+                if chunked_loader:
+                    deps.chunked_embedding_loader = chunked_loader
+                    logger.info("Chunked embedding loader initialized - embeddings will be loaded on-demand")
+                else:
+                    logger.warning("Chunked data detected but chunked loader unavailable - falling back to full load")
+                    # Fallback: try to load all embeddings
+                    deps.df, deps.embeddings, metadata = precomputed_loader.load_all(load_embeddings=True)
             
             # Extract 3D coordinates from dataframe
             deps.reduced_embeddings = np.column_stack([
@@ -152,6 +169,8 @@ async def startup_event():
             logger.info("=" * 60)
             logger.info(f"STARTUP COMPLETE in {startup_time:.2f} seconds!")
             logger.info(f"Loaded {len(deps.df):,} models with pre-computed coordinates")
+            if is_chunked:
+                logger.info("Using chunked embeddings - fast startup mode enabled")
             logger.info(f"Unique libraries: {metadata.get('unique_libraries')}")
             logger.info(f"Unique pipelines: {metadata.get('unique_pipelines')}")
             logger.info("=" * 60)
@@ -1629,27 +1648,46 @@ async def get_full_derivative_network(
     Note: Edge attributes are disabled by default for performance with large datasets.
     If pre-computed positions exist, they will be included in the response.
     """
-    if df is None:
-        raise DataNotLoadedError()
+    if deps.df is None or deps.df.empty:
+        raise HTTPException(
+            status_code=503, 
+            detail="Model data not loaded. Please wait for the server to finish loading data."
+        )
     
     try:
         import time
         start_time = time.time()
-        logger.info(f"Building full derivative network for {len(df):,} models...")
+        logger.info(f"Building full derivative network for {len(deps.df):,} models...")
+        
+        # Check if dataframe has required columns
+        required_columns = ['model_id']
+        missing_columns = [col for col in required_columns if col not in deps.df.columns]
+        if missing_columns:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Missing required columns: {missing_columns}"
+            )
         
         filter_types = None
         if edge_types:
             filter_types = [t.strip() for t in edge_types.split(',') if t.strip()]
         
-        network_builder = ModelNetworkBuilder(df)
-        logger.info("Calling build_full_derivative_network...")
-        
-        # Disable edge attributes for very large graphs to improve performance
-        # They can be slow to compute for 100k+ edges
-        graph = network_builder.build_full_derivative_network(
-            include_edge_attributes=include_edge_attributes,
-            filter_edge_types=filter_types
-        )
+        try:
+            network_builder = ModelNetworkBuilder(deps.df)
+            logger.info("Calling build_full_derivative_network...")
+            
+            # Disable edge attributes for very large graphs to improve performance
+            # They can be slow to compute for 100k+ edges
+            graph = network_builder.build_full_derivative_network(
+                include_edge_attributes=include_edge_attributes,
+                filter_edge_types=filter_types
+            )
+        except Exception as build_error:
+            logger.error(f"Error in build_full_derivative_network: {build_error}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to build network graph: {str(build_error)}"
+            )
         
         build_time = time.time() - start_time
         logger.info(f"Graph built in {build_time:.2f}s: {graph.number_of_nodes():,} nodes, {graph.number_of_edges():,} edges")
@@ -1721,7 +1759,18 @@ async def get_full_derivative_network(
         
         logger.info(f"Processed {len(links):,} links")
         
-        stats = network_builder.get_network_statistics(graph)
+        try:
+            stats = network_builder.get_network_statistics(graph)
+        except Exception as stats_error:
+            logger.warning(f"Could not calculate network statistics: {stats_error}")
+            stats = {
+                "nodes": len(nodes),
+                "edges": len(links),
+                "density": 0.0,
+                "avg_degree": 0.0,
+                "clustering": 0.0
+            }
+        
         total_time = time.time() - start_time
         logger.info(f"Full derivative network built successfully in {total_time:.2f}s")
         
@@ -1730,6 +1779,14 @@ async def get_full_derivative_network(
             "links": links,
             "statistics": stats
         }
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except DataNotLoadedError:
+        raise HTTPException(
+            status_code=503,
+            detail="Model data not loaded. Please wait for the server to finish loading data."
+        )
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
@@ -1737,6 +1794,9 @@ async def get_full_derivative_network(
         error_detail = f"Error building full derivative network: {str(e)}"
         if isinstance(e, (ValueError, KeyError, AttributeError)):
             error_detail += f" (Type: {type(e).__name__})"
+        # Provide more helpful error message
+        if "memory" in str(e).lower() or "MemoryError" in str(type(e)):
+            error_detail += ". The dataset may be too large. Try filtering by edge types."
         raise HTTPException(status_code=500, detail=error_detail)
 
 

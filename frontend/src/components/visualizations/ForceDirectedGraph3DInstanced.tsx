@@ -25,6 +25,11 @@ export interface ForceDirectedGraph3DInstancedProps {
   showLabels?: boolean;
   maxVisibleNodes?: number;
   maxVisibleEdges?: number;
+  linkDistance?: number;
+  chargeStrength?: number;
+  collisionRadius?: number;
+  nodeSizeMultiplier?: number;
+  edgeOpacity?: number;
 }
 
 // Color scheme for different libraries
@@ -72,12 +77,14 @@ function InstancedNodes({
   onNodeClick,
   onNodeHover,
   maxVisible = 500000,
+  nodeSizeMultiplier = 1.0,
 }: {
   nodes: GraphNode[];
   selectedNodeId?: string | null;
   onNodeClick?: (node: GraphNode) => void;
   onNodeHover?: (node: GraphNode | null) => void;
   maxVisible?: number;
+  nodeSizeMultiplier?: number;
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const { camera, raycaster, pointer } = useThree();
@@ -111,7 +118,7 @@ function InstancedNodes({
       const x = node.x || 0;
       const y = node.y || 0;
       const z = node.z || 0;
-      const size = getNodeSize(node.downloads || 0);
+      const size = getNodeSize(node.downloads || 0) * nodeSizeMultiplier;
       
       tempMatrix.makeScale(size, size, size);
       tempMatrix.setPosition(x, y, z);
@@ -211,11 +218,13 @@ function Edges({
   links,
   enabledEdgeTypes,
   maxVisible = 100000,
+  edgeOpacity = 0.6,
 }: {
   nodes: GraphNode[];
   links: GraphLink[];
   enabledEdgeTypes?: Set<EdgeType>;
   maxVisible?: number;
+  edgeOpacity?: number;
 }) {
   const lineRef = useRef<THREE.LineSegments>(null);
   
@@ -286,7 +295,7 @@ function Edges({
       <lineBasicMaterial
         vertexColors
         transparent
-        opacity={0.3}
+        opacity={edgeOpacity}
         depthWrite={false}
       />
     </lineSegments>
@@ -305,6 +314,8 @@ function Scene({
   enabledEdgeTypes,
   maxVisibleNodes = 500000,
   maxVisibleEdges = 100000,
+  nodeSizeMultiplier = 1.0,
+  edgeOpacity = 0.6,
 }: ForceDirectedGraph3DInstancedProps) {
   return (
     <>
@@ -313,6 +324,7 @@ function Scene({
         links={links}
         enabledEdgeTypes={enabledEdgeTypes}
         maxVisible={maxVisibleEdges}
+        edgeOpacity={edgeOpacity}
       />
       <InstancedNodes
         nodes={nodes}
@@ -320,6 +332,7 @@ function Scene({
         onNodeClick={onNodeClick}
         onNodeHover={onNodeHover}
         maxVisible={maxVisibleNodes}
+        nodeSizeMultiplier={nodeSizeMultiplier}
       />
     </>
   );
@@ -340,6 +353,11 @@ export default function ForceDirectedGraph3DInstanced({
   showLabels = false,
   maxVisibleNodes = 500000,
   maxVisibleEdges = 100000,
+  linkDistance = 100,
+  chargeStrength = -300,
+  collisionRadius = 1.0,
+  nodeSizeMultiplier = 1.0,
+  edgeOpacity = 0.6,
 }: ForceDirectedGraph3DInstancedProps) {
   // Calculate bounds for camera positioning
   const bounds = useMemo(() => {
@@ -438,6 +456,8 @@ export default function ForceDirectedGraph3DInstanced({
           maxVisibleEdges={maxVisibleEdges}
           width={width}
           height={height}
+          nodeSizeMultiplier={nodeSizeMultiplier}
+          edgeOpacity={edgeOpacity}
         />
       </Canvas>
       
@@ -464,5 +484,6 @@ export default function ForceDirectedGraph3DInstanced({
     </div>
   );
 }
+
 
 

@@ -20,6 +20,11 @@ export interface ForceDirectedGraph3DProps {
   selectedNodeId?: string | null;
   enabledEdgeTypes?: Set<EdgeType>;
   showLabels?: boolean;
+  linkDistance?: number;
+  chargeStrength?: number;
+  collisionRadius?: number;
+  nodeSizeMultiplier?: number;
+  edgeOpacity?: number;
 }
 
 // Color scheme for different edge types
@@ -47,14 +52,26 @@ class ForceSimulation3D {
   public alpha: number;
   private alphaTarget: number;
   private alphaDecay: number;
+  private linkDistance: number;
+  private chargeStrength: number;
+  private collisionRadius: number;
 
-  constructor(nodes: GraphNode[], links: GraphLink[]) {
+  constructor(
+    nodes: GraphNode[], 
+    links: GraphLink[],
+    linkDistance: number = 100,
+    chargeStrength: number = -300,
+    collisionRadius: number = 1.0
+  ) {
     this.nodes = nodes;
     this.links = links;
     this.velocities = new Map();
     this.alpha = 1.0;
     this.alphaTarget = 0;
     this.alphaDecay = 0.0228;
+    this.linkDistance = linkDistance;
+    this.chargeStrength = chargeStrength;
+    this.collisionRadius = collisionRadius;
 
     // Initialize velocities
     nodes.forEach(node => {
@@ -107,23 +124,25 @@ class ForceSimulation3D {
       const distance = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
 
       const edgeType = link.edge_type;
-      let idealDistance = 80;
+      // Base distance from parameter, with multipliers per edge type
+      let distanceMultiplier = 1.0;
       switch (edgeType) {
         case 'merge':
-          idealDistance = 120;
+          distanceMultiplier = 1.2;
           break;
         case 'finetune':
-          idealDistance = 80;
+          distanceMultiplier = 0.8;
           break;
         case 'quantized':
-          idealDistance = 60;
+          distanceMultiplier = 0.6;
           break;
         case 'adapter':
-          idealDistance = 70;
+          distanceMultiplier = 0.7;
           break;
         default:
-          idealDistance = 100;
+          distanceMultiplier = 1.0;
       }
+      const idealDistance = this.linkDistance * distanceMultiplier;
 
       const force = (distance - idealDistance) * linkStrength;
       const fx = (dx / distance) * force;
@@ -143,7 +162,7 @@ class ForceSimulation3D {
   }
 
   private applyChargeForce() {
-    const chargeStrength = -300;
+    const chargeStrength = this.chargeStrength;
     const nodes = this.nodes;
     
     // Optimize for large graphs: use Barnes-Hut approximation or limit interactions
@@ -241,6 +260,11 @@ function Graph3DScene({
   selectedNodeId,
   enabledEdgeTypes,
   showLabels,
+  linkDistance = 100,
+  chargeStrength = -300,
+  collisionRadius = 1.0,
+  nodeSizeMultiplier = 1.0,
+  edgeOpacity = 0.6,
 }: ForceDirectedGraph3DProps) {
   const simulationRef = useRef<ForceSimulation3D | null>(null);
   const edgeRefsRef = useRef<Map<string, THREE.BufferGeometry>>(new Map());
@@ -280,13 +304,19 @@ function Graph3DScene({
   useEffect(() => {
     if (filteredNodes.length === 0) return;
 
-    simulationRef.current = new ForceSimulation3D(filteredNodes, filteredLinks);
+    simulationRef.current = new ForceSimulation3D(
+      filteredNodes, 
+      filteredLinks,
+      linkDistance,
+      chargeStrength,
+      collisionRadius
+    );
     
     // Run simulation for initial layout
     for (let i = 0; i < 100; i++) {
       simulationRef.current.tick();
     }
-  }, [filteredNodes, filteredLinks]);
+  }, [filteredNodes, filteredLinks, linkDistance, chargeStrength, collisionRadius]);
 
   // Animate simulation - update every frame
   useFrame(() => {
@@ -376,7 +406,7 @@ function Graph3DScene({
                   itemSize={3}
                 />
               </bufferGeometry>
-              <lineBasicMaterial color={color} opacity={0.4} transparent linewidth={width} />
+              <lineBasicMaterial color={color} opacity={edgeOpacity} transparent linewidth={width} />
             </line>
           );
         })}
@@ -386,7 +416,8 @@ function Graph3DScene({
       <group>
         {filteredNodes.map((node) => {
           const downloads = node.downloads || 0;
-          const radius = 0.3 + Math.sqrt(downloads) / 8000;
+          const baseRadius = 0.3 + Math.sqrt(downloads) / 8000;
+          const radius = baseRadius * nodeSizeMultiplier;
           const isSelected = selectedNodeId === node.id;
           const isHovered = hoveredNodeId === node.id;
 
@@ -452,6 +483,11 @@ export default function ForceDirectedGraph3D({
   selectedNodeId,
   enabledEdgeTypes,
   showLabels = true,
+  linkDistance = 100,
+  chargeStrength = -300,
+  collisionRadius = 1.0,
+  nodeSizeMultiplier = 1.0,
+  edgeOpacity = 0.6,
 }: ForceDirectedGraph3DProps) {
   // Calculate bounds for camera
   const bounds = useMemo(() => {
@@ -541,6 +577,11 @@ export default function ForceDirectedGraph3D({
           showLabels={showLabels}
           width={width}
           height={height}
+          linkDistance={linkDistance}
+          chargeStrength={chargeStrength}
+          collisionRadius={collisionRadius}
+          nodeSizeMultiplier={nodeSizeMultiplier}
+          edgeOpacity={edgeOpacity}
         />
       </Canvas>
     </div>

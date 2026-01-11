@@ -1,0 +1,97 @@
+{
+  "version": "v1_test",
+  "created_at": "2026-01-11T00:08:10.933181Z",
+  "total_models": 1000,
+  "sample_size": 1000,
+  "embedding_dim": 384,
+  "unique_libraries": 42,
+  "unique_pipelines": 39,
+  "files": {
+    "models": "models_v1_test.parquet",
+    "embeddings": "embeddings_chunk_*_v1_test.parquet",
+    "chunk_index": "chunk_index_v1_test.parquet"
+  },
+  "chunked": true,
+  "chunk_size": 500,
+  "stats": {
+    "avg_downloads": 1326284.306,
+    "avg_likes": 430.597,
+    "libraries": {
+      "transformers": 648,
+      "sentence-transformers": 88,
+      "diffusers": 70,
+      "": 69,
+      "timm": 33,
+      "open_clip": 14,
+      "ctranslate2": 10,
+      "pyannote-audio": 10,
+      "nemo": 7,
+      "flair": 7,
+      "granite-tsfm": 3,
+      "speechbrain": 3,
+      "sam2": 3,
+      "PyTorch": 2,
+      "hunyuan3d-2": 2,
+      "diffusion-single-file": 2,
+      "ultralytics": 2,
+      "pysentimiento": 2,
+      "birefnet": 2,
+      "moshi": 1
+    },
+    "pipelines": {
+      "text-generation": 178,
+      "": 125,
+      "sentence-similarity": 77,
+      "feature-extraction": 75,
+      "automatic-speech-recognition": 59,
+      "fill-mask": 56,
+      "text-classification": 53,
+      "text-to-image": 51,
+      "image-classification": 45,
+      "token-classification": 32,
+      "image-text-to-text": 31,
+      "zero-shot-image-classification": 28,
+      "translation": 27,
+      "time-series-forecasting": 16,
+      "image-segmentation": 15,
+      "image-to-text": 14,
+      "image-feature-extraction": 11,
+      "text-to-speech": 10,
+      "audio-classification": 9,
+      "zero-shot-classification": 9
+    }
+  },
+  "coordinates": {
+    "3d": {
+      "min": [
+        -10.171256065368652,
+        -15.477258682250977,
+        -10.954425811767578
+      ],
+      "max": [
+        17.075580596923828,
+        18.261310577392578,
+        16.27390480041504
+      ],
+      "mean": [
+        4.863828182220459,
+        3.6625607013702393,
+        5.461649417877197
+      ]
+    },
+    "2d": {
+      "min": [
+        -9.439393997192383,
+        -15.501007080078125
+      ],
+      "max": [
+        25.51938247680664,
+        21.534578323364258
+      ],
+      "mean": [
+        8.268257141113281,
+        6.378992080688477
+      ]
+    }
+  }
+}

@@ -7,12 +7,21 @@ from utils.embeddings import ModelEmbedder
 from utils.dimensionality_reduction import DimensionReducer
 from utils.graph_embeddings import GraphEmbedder
 
+# Try to import chunked loader
+try:
+    from utils.chunked_loader import ChunkedEmbeddingLoader
+    CHUNKED_LOADER_AVAILABLE = True
+except ImportError:
+    CHUNKED_LOADER_AVAILABLE = False
+    ChunkedEmbeddingLoader = None
+
 # Global state (initialized in startup) - these are module-level variables
 # that will be updated by main.py during startup
 data_loader = ModelDataLoader()
 embedder: Optional[ModelEmbedder] = None
 graph_embedder: Optional[GraphEmbedder] = None
 reducer: Optional[DimensionReducer] = None
+chunked_embedding_loader: Optional[ChunkedEmbeddingLoader] = None  # For chunked loading
 df: Optional[pd.DataFrame] = None
 embeddings: Optional[np.ndarray] = None
 graph_embeddings_dict: Optional[Dict[str, np.ndarray]] = None

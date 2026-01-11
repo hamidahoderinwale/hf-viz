@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import ForceDirectedGraph, { EdgeType, GraphNode } from '../components/visualizations/ForceDirectedGraph';
+import { EdgeType, GraphNode } from '../components/visualizations/ForceDirectedGraph';
 import ForceDirectedGraph3D from '../components/visualizations/ForceDirectedGraph3D';
 import ForceDirectedGraph3DInstanced from '../components/visualizations/ForceDirectedGraph3DInstanced';
 import ScatterPlot3D from '../components/visualizations/ScatterPlot3D';
@@ -15,7 +15,7 @@ const ALL_EDGE_TYPES: EdgeType[] = ['finetune', 'quantized', 'adapter', 'merge',
 // Use instanced rendering threshold for large graphs
 const INSTANCED_THRESHOLD = 10000;
 
-type ViewMode = 'graph' | 'embedding' | 'graph3d';
+type ViewMode = 'embedding' | 'graph3d';
 type GraphMode = 'family' | 'full';
 
 export default function GraphPage() {
@@ -319,7 +319,6 @@ export default function GraphPage() {
               onChange={(e) => setViewMode(e.target.value as ViewMode)}
               className="view-mode-select"
             >
-              <option value="graph">Force-Directed Graph (2D)</option>
               <option value="graph3d">Force-Directed Graph (3D)</option>
               <option value="embedding">Embedding Space (3D)</option>
             </select>
@@ -416,42 +415,6 @@ export default function GraphPage() {
               </>
             )}
           </div>
-        ) : viewMode === 'graph' ? (
-          <>
-            <ForceDirectedGraph
-              width={dimensions.width}
-              height={dimensions.height}
-              nodes={nodes}
-              links={links}
-              onNodeClick={handleNodeClick}
-              selectedNodeId={selectedNodeId}
-              enabledEdgeTypes={enabledEdgeTypes}
-              showLabels={true}
-            />
-            <EdgeTypeLegend
-              edgeTypes={ALL_EDGE_TYPES}
-              enabledTypes={enabledEdgeTypes}
-              onToggle={toggleEdgeType}
-            />
-            {graphStats && (
-              <div className="graph-stats">
-                <div className="stat-item">
-                  <span className="stat-label">Nodes:</span>
-                  <span className="stat-value">{graphStats.nodes || nodes.length}</span>
-                </div>
-                <div className="stat-item">
-                  <span className="stat-label">Edges:</span>
-                  <span className="stat-value">{graphStats.edges || links.length}</span>
-                </div>
-                {graphStats.avg_degree && (
-                  <div className="stat-item">
-                    <span className="stat-label">Avg Degree:</span>
-                    <span className="stat-value">{graphStats.avg_degree.toFixed(2)}</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </>
         ) : viewMode === 'graph3d' ? (
           <>
             <div style={{ width: '100%', height: '100%', position: 'relative' }}>
