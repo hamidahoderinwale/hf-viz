@@ -38,4 +38,22 @@ flagged/
 /data/
 !frontend/src/utils/data/
 
+# Logs
+*.log
+auto_start_output.log
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+*.env
+*.key
+*.pem
+*.p12
+*.pfx
+*.p8
+*secret*
+*credentials*
+config.local.*
+
 assets/
