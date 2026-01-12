@@ -1,0 +1,10 @@
+{
+  "created_at": "2026-01-11T03:06:01.412270",
+  "version": "v1",
+  "nodes": 1860411,
+  "edges": 573653,
+  "include_edge_attributes": false,
+  "min_downloads": 0,
+  "max_nodes": null,
+  "file_size_mb": 281.78
+}

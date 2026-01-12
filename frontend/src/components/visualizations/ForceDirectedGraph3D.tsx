@@ -4,11 +4,16 @@
  * with color-coded edges and interactive nodes in 3D space.
  */
 import React, { useMemo, useRef, useEffect, useState, useCallback } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { GraphNode, GraphLink, EdgeType } from './ForceDirectedGraph';
+import { getCategoricalColorMap, getContinuousColorScale, getDepthColorScale, LIBRARY_COLORS, PIPELINE_COLORS } from '../../utils/rendering/colors';
 import './ForceDirectedGraph.css';
+
+export type ColorByOption = 'library' | 'pipeline' | 'downloads' | 'likes' | 'edge_type';
+export type SizeByOption = 'downloads' | 'likes' | 'uniform';
+export type ColorScheme = 'viridis' | 'plasma' | 'inferno' | 'coolwarm';
 
 export interface ForceDirectedGraph3DProps {
   width: number;
@@ -25,6 +30,13 @@ export interface ForceDirectedGraph3DProps {
   collisionRadius?: number;
   nodeSizeMultiplier?: number;
   edgeOpacity?: number;
+  colorBy?: ColorByOption;
+  sizeBy?: SizeByOption;
+  colorScheme?: ColorScheme;
+  highlightedNodeId?: string | null;
+  familyFilter?: string;
+  searchQuery?: string;
+  onZoomToNode?: (nodeId: string) => void;
 }
 
 // Color scheme for different edge types
@@ -265,26 +277,72 @@ function Graph3DScene({
   collisionRadius = 1.0,
   nodeSizeMultiplier = 1.0,
   edgeOpacity = 0.6,
+  colorBy = 'library',
+  sizeBy = 'downloads',
+  colorScheme = 'viridis',
+  highlightedNodeId,
+  familyFilter,
+  searchQuery,
 }: ForceDirectedGraph3DProps) {
   const simulationRef = useRef<ForceSimulation3D | null>(null);
   const edgeRefsRef = useRef<Map<string, THREE.BufferGeometry>>(new Map());
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const { camera, controls } = useThree();
+
+  // Filter nodes by family and search query first
+  const preFilteredNodes = useMemo(() => {
+    let result = nodes;
+    
+    // Filter by family (organization prefix)
+    if (familyFilter && familyFilter.trim()) {
+      const filter = familyFilter.toLowerCase();
+      result = result.filter(node => {
+        const nodeId = node.id.toLowerCase();
+        return nodeId.startsWith(filter + '/') || nodeId.includes('/' + filter + '/');
+      });
+    }
+    
+    // Filter by search query
+    if (searchQuery && searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(node => 
+        node.id.toLowerCase().includes(query) ||
+        node.title?.toLowerCase().includes(query)
+      );
+    }
+    
+    return result;
+  }, [nodes, familyFilter, searchQuery]);
 
   // Filter links based on enabled edge types
   const filteredLinks = useMemo((): GraphLink[] => {
-    if (!enabledEdgeTypes || enabledEdgeTypes.size === 0) {
-      return links;
+    let result = links;
+    
+    // Filter by edge types
+    if (enabledEdgeTypes && enabledEdgeTypes.size > 0) {
+      result = result.filter(link => {
+        const linkTypes = link.edge_types || [link.edge_type];
+        return linkTypes.some(type => enabledEdgeTypes.has(type));
+      });
     }
-    return links.filter(link => {
-      const linkTypes = link.edge_types || [link.edge_type];
-      return linkTypes.some(type => enabledEdgeTypes.has(type));
-    });
-  }, [links, enabledEdgeTypes]);
+    
+    // Filter to only include links where both source and target are in preFilteredNodes
+    if (familyFilter || searchQuery) {
+      const nodeIds = new Set(preFilteredNodes.map(n => n.id));
+      result = result.filter(link => {
+        const sourceId = typeof link.source === 'string' ? link.source : (link.source as GraphNode).id;
+        const targetId = typeof link.target === 'string' ? link.target : (link.target as GraphNode).id;
+        return nodeIds.has(sourceId) && nodeIds.has(targetId);
+      });
+    }
+    
+    return result;
+  }, [links, enabledEdgeTypes, preFilteredNodes, familyFilter, searchQuery]);
 
   // Filter nodes to only include those connected by filtered links
   const filteredNodes = useMemo(() => {
     if (!enabledEdgeTypes || enabledEdgeTypes.size === 0) {
-      return nodes;
+      return preFilteredNodes;
     }
     const connectedNodeIds = new Set<string>();
     filteredLinks.forEach(link => {
@@ -297,8 +355,62 @@ function Graph3DScene({
       connectedNodeIds.add(sourceId);
       connectedNodeIds.add(targetId);
     });
-    return nodes.filter(node => connectedNodeIds.has(node.id));
-  }, [nodes, filteredLinks, enabledEdgeTypes]);
+    return preFilteredNodes.filter(node => connectedNodeIds.has(node.id));
+  }, [preFilteredNodes, filteredLinks, enabledEdgeTypes]);
+
+  // Create color scale based on colorBy option
+  const getNodeColor = useMemo(() => {
+    if (colorBy === 'downloads' || colorBy === 'likes') {
+      const values = filteredNodes.map(n => colorBy === 'downloads' ? (n.downloads || 0) : (n.likes || 0));
+      const min = Math.min(...values, 0);
+      const max = Math.max(...values, 1);
+      const scale = getContinuousColorScale(min, max, colorScheme, true);
+      return (node: GraphNode) => scale(colorBy === 'downloads' ? (node.downloads || 0) : (node.likes || 0));
+    }
+    
+    if (colorBy === 'library') {
+      return (node: GraphNode) => LIBRARY_COLORS[node.library?.toLowerCase() || 'unknown'] || '#6b7280';
+    }
+    
+    if (colorBy === 'pipeline') {
+      return (node: GraphNode) => PIPELINE_COLORS[node.pipeline?.toLowerCase() || 'unknown'] || '#6b7280';
+    }
+    
+    // Default: edge_type based on most common edge type connected to this node
+    return (node: GraphNode) => {
+      const nodeLinks = filteredLinks.filter(link => {
+        const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
+        const targetId = typeof link.target === 'string' ? link.target : link.target.id;
+        return sourceId === node.id || targetId === node.id;
+      });
+      if (nodeLinks.length === 0) return '#6b7280';
+      const edgeType = nodeLinks[0].edge_type || 'parent';
+      const edgeColors: Record<string, string> = {
+        finetune: '#3b82f6',
+        quantized: '#10b981',
+        adapter: '#f59e0b',
+        merge: '#8b5cf6',
+        parent: '#6b7280',
+      };
+      return edgeColors[edgeType] || '#6b7280';
+    };
+  }, [colorBy, colorScheme, filteredNodes, filteredLinks]);
+
+  // Calculate node size based on sizeBy option
+  const getNodeSize = useCallback((node: GraphNode, baseMultiplier: number = 1.0) => {
+    let baseSize = 0.3;
+    
+    if (sizeBy === 'downloads') {
+      baseSize = 0.3 + Math.sqrt(node.downloads || 0) / 8000;
+    } else if (sizeBy === 'likes') {
+      baseSize = 0.3 + Math.sqrt(node.likes || 0) / 500;
+    } else {
+      // uniform
+      baseSize = 0.5;
+    }
+    
+    return baseSize * baseMultiplier;
+  }, [sizeBy]);
 
   // Initialize simulation
   useEffect(() => {
@@ -415,17 +527,31 @@ function Graph3DScene({
       {/* Nodes */}
       <group>
         {filteredNodes.map((node) => {
-          const downloads = node.downloads || 0;
-          const baseRadius = 0.3 + Math.sqrt(downloads) / 8000;
-          const radius = baseRadius * nodeSizeMultiplier;
+          const radius = getNodeSize(node, nodeSizeMultiplier);
           const isSelected = selectedNodeId === node.id;
           const isHovered = hoveredNodeId === node.id;
-
-          // Color by library
-          const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'];
-          const libraries = Array.from(new Set(filteredNodes.map(n => n.library).filter(Boolean)));
-          const libIndex = libraries.indexOf(node.library);
-          const color = colors[libIndex % colors.length] || '#6b7280';
+          const isHighlighted = highlightedNodeId === node.id;
+          
+          // Get color from colorBy option
+          const baseColor = getNodeColor(node);
+          
+          // Determine final color based on state
+          let finalColor = baseColor;
+          let emissiveIntensity = 0.1;
+          
+          if (isSelected) {
+            finalColor = '#ef4444'; // Red for selected
+            emissiveIntensity = 0.5;
+          } else if (isHighlighted) {
+            finalColor = '#22d3ee'; // Cyan for highlighted (search result)
+            emissiveIntensity = 0.6;
+          } else if (isHovered) {
+            finalColor = '#fbbf24'; // Yellow for hovered
+            emissiveIntensity = 0.3;
+          }
+          
+          // Scale up highlighted/selected nodes
+          const finalRadius = (isHighlighted || isSelected) ? radius * 1.5 : radius;
 
           return (
             <mesh
@@ -442,11 +568,11 @@ function Graph3DScene({
                 if (onNodeHover) onNodeHover(null);
               }}
             >
-              <sphereGeometry args={[radius, 12, 12]} />
+              <sphereGeometry args={[finalRadius, 12, 12]} />
               <meshStandardMaterial
-                color={isSelected ? '#ef4444' : isHovered ? '#fbbf24' : color}
-                emissive={isSelected ? '#ef4444' : isHovered ? '#fbbf24' : color}
-                emissiveIntensity={isSelected ? 0.5 : isHovered ? 0.3 : 0.1}
+                color={finalColor}
+                emissive={finalColor}
+                emissiveIntensity={emissiveIntensity}
               />
             </mesh>
           );
@@ -488,6 +614,12 @@ export default function ForceDirectedGraph3D({
   collisionRadius = 1.0,
   nodeSizeMultiplier = 1.0,
   edgeOpacity = 0.6,
+  colorBy = 'library',
+  sizeBy = 'downloads',
+  colorScheme = 'viridis',
+  highlightedNodeId,
+  familyFilter,
+  searchQuery,
 }: ForceDirectedGraph3DProps) {
   // Calculate bounds for camera
   const bounds = useMemo(() => {
@@ -582,6 +714,12 @@ export default function ForceDirectedGraph3D({
           collisionRadius={collisionRadius}
           nodeSizeMultiplier={nodeSizeMultiplier}
           edgeOpacity={edgeOpacity}
+          colorBy={colorBy}
+          sizeBy={sizeBy}
+          colorScheme={colorScheme}
+          highlightedNodeId={highlightedNodeId}
+          familyFilter={familyFilter}
+          searchQuery={searchQuery}
         />
       </Canvas>
     </div>

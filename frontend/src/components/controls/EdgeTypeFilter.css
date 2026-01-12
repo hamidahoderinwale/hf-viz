@@ -1,17 +1,27 @@
 .edge-type-filter {
   padding: 12px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-secondary, #fafafa);
+  border: 1px solid var(--border-light, #e8e8e8);
   border-radius: 8px;
   margin-bottom: 12px;
+}
+
+[data-theme="dark"] .edge-type-filter {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .edge-type-filter h4 {
   margin: 0 0 8px 0;
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-secondary, #9ca3af);
+  color: var(--text-secondary, #666666);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+[data-theme="dark"] .edge-type-filter h4 {
+  color: var(--text-secondary, #9ca3af);
 }
 
 .edge-type-item {
@@ -21,11 +31,15 @@
   margin-bottom: 4px;
   border-radius: 4px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base, 200ms);
   user-select: none;
 }
 
 .edge-type-item:hover {
+  background: var(--bg-tertiary, #f5f5f5);
+}
+
+[data-theme="dark"] .edge-type-item:hover {
   background: rgba(255, 255, 255, 0.05);
 }
 
@@ -43,6 +57,10 @@
 
 .edge-type-label {
   font-size: 13px;
+  color: var(--text-primary, #1a1a1a);
+}
+
+[data-theme="dark"] .edge-type-label {
   color: var(--text-primary, #ffffff);
 }
 
@@ -62,24 +80,45 @@
 }
 
 .edge-type-toggle {
-  padding: 4px 10px;
-  border: 1px solid;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--border-medium, #d0d0d0);
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
-  color: var(--text-primary, #ffffff);
-  background: transparent;
+  transition: all var(--transition-base, 200ms);
+  color: var(--text-secondary, #666666);
+  background: var(--bg-primary, #ffffff);
   white-space: nowrap;
+  font-family: var(--font-primary, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
 }
 
-.edge-type-toggle:hover {
-  opacity: 0.8;
+.edge-type-toggle:hover:not(.active) {
+  background: var(--bg-secondary, #fafafa);
+  color: var(--text-primary, #1a1a1a);
+  border-color: var(--border-dark, #b0b0b0);
 }
 
 .edge-type-toggle.active {
   opacity: 1;
+  color: white;
+  border-color: transparent;
+  font-weight: 600;
+}
+
+[data-theme="dark"] .edge-type-toggle {
+  color: var(--text-secondary, #cccccc);
+  background: var(--bg-primary, #1a1a1a);
+  border-color: var(--border-medium, #3a3a3a);
+}
+
+[data-theme="dark"] .edge-type-toggle:hover:not(.active) {
+  background: var(--bg-secondary, #2d2d2d);
+  color: var(--text-primary, #ffffff);
+  border-color: var(--border-dark, #555555);
 }
 
 .edge-type-toggle-label {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Palette, Maximize2, Eye, GitBranch } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Palette, Maximize2, Eye, GitBranch, Filter, Search, Moon, Sun } from 'lucide-react';
+import ThemeToggle from './components/controls/ThemeToggle';
 import IntroModal from './components/ui/IntroModal';
 import ScatterPlot3D from './components/visualizations/ScatterPlot3D';
 import NetworkGraph from './components/visualizations/NetworkGraph';
@@ -110,6 +111,19 @@ function App() {
   const [collisionRadius, setCollisionRadius] = useState(1.0);
   const [nodeSizeMultiplier, setNodeSizeMultiplier] = useState(1.0);
   const [edgeOpacity, setEdgeOpacity] = useState(0.6);
+  
+  // Force graph visual options (harmonized with embeddings view)
+  const [graphColorBy, setGraphColorBy] = useState<'library' | 'pipeline' | 'downloads' | 'likes' | 'edge_type'>('library');
+  const [graphSizeBy, setGraphSizeBy] = useState<'downloads' | 'likes' | 'uniform'>('downloads');
+  const [graphColorScheme, setGraphColorScheme] = useState<'viridis' | 'plasma' | 'inferno' | 'coolwarm'>('viridis');
+  
+  // Force graph search and filtering
+  const [graphSearchQuery, setGraphSearchQuery] = useState('');
+  const [graphFamilyFilter, setGraphFamilyFilter] = useState('');
+  const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
+  
+  // Available families for the filter dropdown
+  const [availableFamilies, setAvailableFamilies] = useState<string[]>([]);
   
   // Threshold for using instanced rendering
   const INSTANCED_THRESHOLD = 10000;
@@ -481,13 +495,41 @@ function App() {
       setGraphLoading(true);
       setGraphError(null);
       try {
+        // Use filtering to reduce network size for better performance
+        // Start with top 50k models by downloads to avoid 500 errors
         const data = await fetchFullDerivativeNetwork({
           edgeTypes: undefined,
           includeEdgeAttributes: false,
+          minDownloads: 0, // Can be increased to reduce size further
+          maxNodes: 50000, // Limit to top 50k models by downloads
+          usePrecomputed: true, // Try to use pre-computed graph if available
         });
         setGraphNodes(data.nodes || []);
         setGraphLinks(data.links || []);
         setGraphStats(data.statistics ? { nodes: data.statistics.nodes, edges: data.statistics.edges } : null);
+        
+        // Extract unique families (organizations) from node IDs for filtering
+        if (data.nodes && data.nodes.length > 0) {
+          const familySet = new Set<string>();
+          data.nodes.forEach((node: GraphNode) => {
+            if (node.id && node.id.includes('/')) {
+              const family = node.id.split('/')[0];
+              if (family) familySet.add(family);
+            }
+          });
+          // Sort by frequency (most common families first)
+          const familyCount = new Map<string, number>();
+          data.nodes.forEach((node: GraphNode) => {
+            if (node.id && node.id.includes('/')) {
+              const family = node.id.split('/')[0];
+              familyCount.set(family, (familyCount.get(family) || 0) + 1);
+            }
+          });
+          const sortedFamilies = Array.from(familySet)
+            .sort((a, b) => (familyCount.get(b) || 0) - (familyCount.get(a) || 0))
+            .slice(0, 100); // Keep top 100 families
+          setAvailableFamilies(sortedFamilies);
+        }
         
         if (data.links && data.links.length > 0) {
           const availableTypes = getAvailableEdgeTypes(data.links);
@@ -498,7 +540,21 @@ function App() {
         }
         graphLoadedRef.current = true;
       } catch (err) {
-        setGraphError(err instanceof Error ? err.message : 'Failed to load graph');
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load graph';
+        // Check if it's a rate limit error
+        if (errorMessage.includes('Rate limit') || errorMessage.includes('429')) {
+          setGraphError(`${errorMessage} The graph will automatically retry.`);
+          // Reset the loaded flag so it can retry
+          graphLoadedRef.current = false;
+          // Retry after a delay
+          setTimeout(() => {
+            if (vizMode === 'force-graph' && !graphLoadedRef.current) {
+              loadForceGraph();
+            }
+          }, 5000);
+        } else {
+          setGraphError(errorMessage);
+        }
       } finally {
         setGraphLoading(false);
       }
@@ -664,6 +720,9 @@ function App() {
                 <a href="https://github.com/bendlaufer/ai-ecosystem" target="_blank" rel="noopener noreferrer" title="View source code on GitHub">GitHub</a>
                 <a href="https://huggingface.co/modelbiome" target="_blank" rel="noopener noreferrer" title="Access the dataset on Hugging Face">Dataset</a>
               </div>
+              <div className="nav-theme-toggle">
+                <ThemeToggle />
+              </div>
             </div>
           )}
         </aside>
@@ -795,6 +854,76 @@ function App() {
               {/* Force graph controls - only show for force-graph mode */}
               {vizMode === 'force-graph' && !showAnalytics && !showFamilies && !showGraph && (
                 <>
+                  {/* Color by - harmonized with embeddings view */}
+                  <div className="control-group">
+                    <Palette size={14} className="control-icon" />
+                    <select 
+                      value={graphColorBy} 
+                      onChange={(e) => setGraphColorBy(e.target.value as typeof graphColorBy)}
+                      className="control-select"
+                      title="Color nodes by attribute"
+                    >
+                      <option value="library">ML Library</option>
+                      <option value="pipeline">Task Type</option>
+                      <option value="downloads">Downloads</option>
+                      <option value="likes">Likes</option>
+                      <option value="edge_type">Edge Type</option>
+                    </select>
+                    {(graphColorBy === 'downloads' || graphColorBy === 'likes') && (
+                      <select 
+                        value={graphColorScheme} 
+                        onChange={(e) => setGraphColorScheme(e.target.value as typeof graphColorScheme)}
+                        className="control-select control-select-small"
+                        title="Color gradient style"
+                      >
+                        <option value="viridis">Viridis</option>
+                        <option value="plasma">Plasma</option>
+                        <option value="inferno">Inferno</option>
+                        <option value="coolwarm">Cool-Warm</option>
+                      </select>
+                    )}
+                  </div>
+
+                  <span className="control-divider" />
+
+                  {/* Size by */}
+                  <div className="control-group">
+                    <Maximize2 size={14} className="control-icon" />
+                    <select 
+                      value={graphSizeBy} 
+                      onChange={(e) => setGraphSizeBy(e.target.value as typeof graphSizeBy)}
+                      className="control-select"
+                      title="Size nodes by attribute"
+                    >
+                      <option value="downloads">By Downloads</option>
+                      <option value="likes">By Likes</option>
+                      <option value="uniform">Uniform Size</option>
+                    </select>
+                  </div>
+
+                  <span className="control-divider" />
+
+                  {/* Family filter */}
+                  <div className="control-group">
+                    <Filter size={14} className="control-icon" />
+                    <select 
+                      value={graphFamilyFilter} 
+                      onChange={(e) => {
+                        setGraphFamilyFilter(e.target.value);
+                        setHighlightedNodeId(null);
+                      }}
+                      className="control-select"
+                      title="Filter by organization/family"
+                    >
+                      <option value="">All Families</option>
+                      {availableFamilies.map(family => (
+                        <option key={family} value={family}>{family}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <span className="control-divider" />
+
                   {/* Edge type filter */}
                   {availableEdgeTypes.length > 0 && (
                     <>
@@ -854,39 +983,83 @@ function App() {
 
             {/* Right: Integrated Search */}
             <div className="control-bar-right">
-              <IntegratedSearch
-                value={localSearchQuery}
-                onChange={(value) => {
-                  setLocalSearchQuery(value);
-                  debouncedSetSearchQuery(value);
-                }}
-                onSelect={(result) => {
-                  const modelPoint: ModelPoint = {
-                    model_id: result.model_id,
-                    x: result.x || 0,
-                    y: result.y || 0,
-                    z: result.z || 0,
-                    downloads: result.downloads || 0,
-                    likes: result.likes || 0,
-                    trending_score: null,
-                    tags: null,
-                    licenses: null,
-                    cluster_id: null,
-                    created_at: null,
-                    library_name: result.library_name || null,
-                    pipeline_tag: result.pipeline_tag || null,
-                    parent_model: null,
-                    family_depth: result.family_depth || null,
-                  };
-                  setSelectedModel(modelPoint);
-                  setIsModalOpen(true);
-                  setLocalSearchQuery('');
-                  setSearchQuery('');
-                }}
-                onZoomTo={(x, y, z) => {
-                  // Zoom to point - reserved for future implementation
-                }}
-              />
+              {vizMode === 'force-graph' ? (
+                // Simple search input for force graph mode
+                <div className="control-group graph-search">
+                  <Search size={14} className="control-icon" />
+                  <input
+                    type="text"
+                    value={graphSearchQuery}
+                    onChange={(e) => {
+                      setGraphSearchQuery(e.target.value);
+                      // Auto-highlight the first matching node
+                      if (e.target.value.trim()) {
+                        const query = e.target.value.toLowerCase();
+                        const match = graphNodes.find(n => 
+                          n.id.toLowerCase().includes(query) ||
+                          n.title?.toLowerCase().includes(query)
+                        );
+                        if (match) {
+                          setHighlightedNodeId(match.id);
+                        } else {
+                          setHighlightedNodeId(null);
+                        }
+                      } else {
+                        setHighlightedNodeId(null);
+                      }
+                    }}
+                    placeholder="Search models..."
+                    className="graph-search-input"
+                    title="Type to filter and highlight models in the graph"
+                  />
+                  {graphSearchQuery && (
+                    <button
+                      className="graph-search-clear"
+                      onClick={() => {
+                        setGraphSearchQuery('');
+                        setHighlightedNodeId(null);
+                      }}
+                      title="Clear search"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <IntegratedSearch
+                  value={localSearchQuery}
+                  onChange={(value) => {
+                    setLocalSearchQuery(value);
+                    debouncedSetSearchQuery(value);
+                  }}
+                  onSelect={(result) => {
+                    const modelPoint: ModelPoint = {
+                      model_id: result.model_id,
+                      x: result.x || 0,
+                      y: result.y || 0,
+                      z: result.z || 0,
+                      downloads: result.downloads || 0,
+                      likes: result.likes || 0,
+                      trending_score: null,
+                      tags: null,
+                      licenses: null,
+                      cluster_id: null,
+                      created_at: null,
+                      library_name: result.library_name || null,
+                      pipeline_tag: result.pipeline_tag || null,
+                      parent_model: null,
+                      family_depth: result.family_depth || null,
+                    };
+                    setSelectedModel(modelPoint);
+                    setIsModalOpen(true);
+                    setLocalSearchQuery('');
+                    setSearchQuery('');
+                  }}
+                  onZoomTo={(x, y, z) => {
+                    // Zoom to point - reserved for future implementation
+                  }}
+                />
+              )}
             </div>
           </div>
         </div>
@@ -965,6 +1138,12 @@ function App() {
                       collisionRadius={collisionRadius}
                       nodeSizeMultiplier={nodeSizeMultiplier}
                       edgeOpacity={edgeOpacity}
+                      colorBy={graphColorBy}
+                      sizeBy={graphSizeBy}
+                      colorScheme={graphColorScheme}
+                      highlightedNodeId={highlightedNodeId}
+                      familyFilter={graphFamilyFilter}
+                      searchQuery={graphSearchQuery}
                     />
                   ) : (
                     <ForceDirectedGraph3D
@@ -981,6 +1160,12 @@ function App() {
                       collisionRadius={collisionRadius}
                       nodeSizeMultiplier={nodeSizeMultiplier}
                       edgeOpacity={edgeOpacity}
+                      colorBy={graphColorBy}
+                      sizeBy={graphSizeBy}
+                      colorScheme={graphColorScheme}
+                      highlightedNodeId={highlightedNodeId}
+                      familyFilter={graphFamilyFilter}
+                      searchQuery={graphSearchQuery}
                     />
                   )}
                 </>

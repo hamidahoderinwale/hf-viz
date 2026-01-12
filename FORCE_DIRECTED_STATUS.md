@@ -167,3 +167,4 @@
 - Force parameters (hardcoded): `ForceDirectedGraph.tsx` lines 148-179
 - Edge type controls (reference): `GraphPage.tsx` lines 562-598
 
+

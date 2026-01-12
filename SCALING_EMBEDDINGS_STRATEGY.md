@@ -287,3 +287,4 @@ async def get_models(
 4. **Compression**: Use better compression (zstd) for parquet files
 5. **Quantization**: Use int8 embeddings (50% memory reduction)
 
+

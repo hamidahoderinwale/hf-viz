@@ -134,3 +134,4 @@ nohup python scripts/precompute_data.py --sample-size 0 --chunked --chunk-size 5
 
 The chunked embedding system is fully implemented and tested. The full precompute is running and will complete in a few hours. Once complete, the server will automatically use chunked mode for fast startup and efficient memory usage.
 
+

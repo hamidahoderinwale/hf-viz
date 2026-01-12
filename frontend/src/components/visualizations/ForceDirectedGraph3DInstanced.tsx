@@ -11,7 +11,12 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { GraphNode, GraphLink, EdgeType } from './ForceDirectedGraph';
+import { getContinuousColorScale, LIBRARY_COLORS, PIPELINE_COLORS } from '../../utils/rendering/colors';
 import './ForceDirectedGraph.css';
+
+export type ColorByOption = 'library' | 'pipeline' | 'downloads' | 'likes' | 'edge_type';
+export type SizeByOption = 'downloads' | 'likes' | 'uniform';
+export type ColorScheme = 'viridis' | 'plasma' | 'inferno' | 'coolwarm';
 
 export interface ForceDirectedGraph3DInstancedProps {
   width: number;
@@ -30,19 +35,13 @@ export interface ForceDirectedGraph3DInstancedProps {
   collisionRadius?: number;
   nodeSizeMultiplier?: number;
   edgeOpacity?: number;
+  colorBy?: ColorByOption;
+  sizeBy?: SizeByOption;
+  colorScheme?: ColorScheme;
+  highlightedNodeId?: string | null;
+  familyFilter?: string;
+  searchQuery?: string;
 }
-
-// Color scheme for different libraries
-const LIBRARY_COLORS: Record<string, string> = {
-  transformers: '#3b82f6',      // Blue
-  pytorch: '#ef4444',           // Red
-  tensorflow: '#f97316',        // Orange
-  diffusers: '#8b5cf6',         // Purple
-  'sentence-transformers': '#10b981', // Green
-  timm: '#06b6d4',              // Cyan
-  peft: '#ec4899',              // Pink
-  default: '#6b7280',           // Gray
-};
 
 // Color scheme for different edge types
 const EDGE_COLORS: Record<EdgeType, THREE.Color> = {
@@ -54,18 +53,40 @@ const EDGE_COLORS: Record<EdgeType, THREE.Color> = {
 };
 
 /**
- * Get color for a node based on its library
+ * Get color for a node based on colorBy option
  */
-function getNodeColor(library: string | undefined): THREE.Color {
-  const colorHex = LIBRARY_COLORS[library?.toLowerCase() || ''] || LIBRARY_COLORS.default;
+function getNodeColorByOption(
+  node: GraphNode,
+  colorBy: ColorByOption,
+  colorScale?: (value: number) => string
+): THREE.Color {
+  if (colorBy === 'downloads' && colorScale) {
+    return new THREE.Color(colorScale(node.downloads || 0));
+  }
+  if (colorBy === 'likes' && colorScale) {
+    return new THREE.Color(colorScale(node.likes || 0));
+  }
+  if (colorBy === 'pipeline') {
+    const colorHex = PIPELINE_COLORS[node.pipeline?.toLowerCase() || 'unknown'] || '#6b7280';
+    return new THREE.Color(colorHex);
+  }
+  // Default: library
+  const colorHex = LIBRARY_COLORS[node.library?.toLowerCase() || 'unknown'] || '#6b7280';
   return new THREE.Color(colorHex);
 }
 
 /**
- * Calculate node size based on downloads (log scale)
+ * Calculate node size based on sizeBy option
  */
-function getNodeSize(downloads: number): number {
-  return 0.3 + Math.log10(Math.max(downloads, 1)) * 0.15;
+function getNodeSizeByOption(node: GraphNode, sizeBy: SizeByOption): number {
+  if (sizeBy === 'downloads') {
+    return 0.3 + Math.log10(Math.max(node.downloads || 1, 1)) * 0.15;
+  }
+  if (sizeBy === 'likes') {
+    return 0.3 + Math.log10(Math.max(node.likes || 1, 1)) * 0.2;
+  }
+  // uniform
+  return 0.5;
 }
 
 /**
@@ -78,6 +99,12 @@ function InstancedNodes({
   onNodeHover,
   maxVisible = 500000,
   nodeSizeMultiplier = 1.0,
+  colorBy = 'library',
+  sizeBy = 'downloads',
+  colorScheme = 'viridis',
+  highlightedNodeId,
+  familyFilter,
+  searchQuery,
 }: {
   nodes: GraphNode[];
   selectedNodeId?: string | null;
@@ -85,19 +112,50 @@ function InstancedNodes({
   onNodeHover?: (node: GraphNode | null) => void;
   maxVisible?: number;
   nodeSizeMultiplier?: number;
+  colorBy?: ColorByOption;
+  sizeBy?: SizeByOption;
+  colorScheme?: ColorScheme;
+  highlightedNodeId?: string | null;
+  familyFilter?: string;
+  searchQuery?: string;
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const { camera, raycaster, pointer } = useThree();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   
+  // Filter nodes by family and search query first
+  const preFilteredNodes = useMemo(() => {
+    let result = nodes;
+    
+    // Filter by family (organization prefix)
+    if (familyFilter && familyFilter.trim()) {
+      const filter = familyFilter.toLowerCase();
+      result = result.filter(node => {
+        const nodeId = node.id.toLowerCase();
+        return nodeId.startsWith(filter + '/') || nodeId.includes('/' + filter + '/');
+      });
+    }
+    
+    // Filter by search query
+    if (searchQuery && searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(node => 
+        node.id.toLowerCase().includes(query) ||
+        node.title?.toLowerCase().includes(query)
+      );
+    }
+    
+    return result;
+  }, [nodes, familyFilter, searchQuery]);
+  
   // Limit nodes for performance
   const visibleNodes = useMemo(() => {
-    if (nodes.length <= maxVisible) return nodes;
+    if (preFilteredNodes.length <= maxVisible) return preFilteredNodes;
     // Sort by downloads and take top N
-    return [...nodes]
+    return [...preFilteredNodes]
       .sort((a, b) => (b.downloads || 0) - (a.downloads || 0))
       .slice(0, maxVisible);
-  }, [nodes, maxVisible]);
+  }, [preFilteredNodes, maxVisible]);
   
   // Node ID to index map for lookup
   const nodeIndexMap = useMemo(() => {
@@ -105,6 +163,17 @@ function InstancedNodes({
     visibleNodes.forEach((node, i) => map.set(node.id, i));
     return map;
   }, [visibleNodes]);
+  
+  // Create color scale for continuous colorBy options
+  const colorScale = useMemo(() => {
+    if (colorBy === 'downloads' || colorBy === 'likes') {
+      const values = visibleNodes.map(n => colorBy === 'downloads' ? (n.downloads || 0) : (n.likes || 0));
+      const min = Math.min(...values, 0);
+      const max = Math.max(...values, 1);
+      return getContinuousColorScale(min, max, colorScheme, true);
+    }
+    return undefined;
+  }, [colorBy, colorScheme, visibleNodes]);
   
   // Pre-compute matrices and colors
   const { matrices, colors, sizes } = useMemo(() => {
@@ -118,18 +187,18 @@ function InstancedNodes({
       const x = node.x || 0;
       const y = node.y || 0;
       const z = node.z || 0;
-      const size = getNodeSize(node.downloads || 0) * nodeSizeMultiplier;
+      const size = getNodeSizeByOption(node, sizeBy) * nodeSizeMultiplier;
       
       tempMatrix.makeScale(size, size, size);
       tempMatrix.setPosition(x, y, z);
       matrices.push(tempMatrix.clone());
       
-      colors.push(getNodeColor(node.library));
+      colors.push(getNodeColorByOption(node, colorBy, colorScale));
       sizes.push(size);
     });
     
     return { matrices, colors, sizes };
-  }, [visibleNodes]);
+  }, [visibleNodes, colorBy, sizeBy, colorScale, nodeSizeMultiplier]);
   
   // Update instance attributes when data changes
   useEffect(() => {
@@ -141,12 +210,15 @@ function InstancedNodes({
     matrices.forEach((matrix, i) => {
       mesh.setMatrixAt(i, matrix);
       
-      // Highlight selected/hovered nodes
+      // Highlight selected/hovered/highlighted nodes
       const isSelected = visibleNodes[i]?.id === selectedNodeId;
+      const isHighlighted = visibleNodes[i]?.id === highlightedNodeId;
       const isHovered = i === hoveredIndex;
       
       if (isSelected) {
         tempColor.set('#ef4444'); // Red for selected
+      } else if (isHighlighted) {
+        tempColor.set('#22d3ee'); // Cyan for highlighted (search result)
       } else if (isHovered) {
         tempColor.set('#fbbf24'); // Yellow for hovered
       } else {
@@ -158,7 +230,7 @@ function InstancedNodes({
     
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  }, [matrices, colors, selectedNodeId, hoveredIndex, visibleNodes]);
+  }, [matrices, colors, selectedNodeId, highlightedNodeId, hoveredIndex, visibleNodes]);
   
   // Raycasting for hover/click
   useFrame(() => {
@@ -219,14 +291,43 @@ function Edges({
   enabledEdgeTypes,
   maxVisible = 100000,
   edgeOpacity = 0.6,
+  familyFilter,
+  searchQuery,
 }: {
   nodes: GraphNode[];
   links: GraphLink[];
   enabledEdgeTypes?: Set<EdgeType>;
   maxVisible?: number;
   edgeOpacity?: number;
+  familyFilter?: string;
+  searchQuery?: string;
 }) {
   const lineRef = useRef<THREE.LineSegments>(null);
+  
+  // Filter nodes by family and search query first
+  const filteredNodeIds = useMemo(() => {
+    let result = nodes;
+    
+    // Filter by family (organization prefix)
+    if (familyFilter && familyFilter.trim()) {
+      const filter = familyFilter.toLowerCase();
+      result = result.filter(node => {
+        const nodeId = node.id.toLowerCase();
+        return nodeId.startsWith(filter + '/') || nodeId.includes('/' + filter + '/');
+      });
+    }
+    
+    // Filter by search query
+    if (searchQuery && searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(node => 
+        node.id.toLowerCase().includes(query) ||
+        node.title?.toLowerCase().includes(query)
+      );
+    }
+    
+    return new Set(result.map(n => n.id));
+  }, [nodes, familyFilter, searchQuery]);
   
   // Create node lookup map
   const nodeMap = useMemo(() => {
@@ -239,10 +340,20 @@ function Edges({
   const visibleLinks = useMemo(() => {
     let filtered = links;
     
+    // Filter by edge types
     if (enabledEdgeTypes && enabledEdgeTypes.size > 0) {
       filtered = links.filter(link => {
         const linkTypes = link.edge_types || [link.edge_type];
         return linkTypes.some(type => enabledEdgeTypes.has(type));
+      });
+    }
+    
+    // Filter to only include links where both source and target are in filtered nodes
+    if (familyFilter || searchQuery) {
+      filtered = filtered.filter(link => {
+        const sourceId = typeof link.source === 'string' ? link.source : link.source?.id;
+        const targetId = typeof link.target === 'string' ? link.target : link.target?.id;
+        return filteredNodeIds.has(sourceId || '') && filteredNodeIds.has(targetId || '');
       });
     }
     
@@ -251,7 +362,7 @@ function Edges({
     }
     
     return filtered;
-  }, [links, enabledEdgeTypes, maxVisible]);
+  }, [links, enabledEdgeTypes, maxVisible, familyFilter, searchQuery, filteredNodeIds]);
   
   // Build geometry
   const geometry = useMemo(() => {
@@ -316,6 +427,12 @@ function Scene({
   maxVisibleEdges = 100000,
   nodeSizeMultiplier = 1.0,
   edgeOpacity = 0.6,
+  colorBy = 'library',
+  sizeBy = 'downloads',
+  colorScheme = 'viridis',
+  highlightedNodeId,
+  familyFilter,
+  searchQuery,
 }: ForceDirectedGraph3DInstancedProps) {
   return (
     <>
@@ -325,6 +442,8 @@ function Scene({
         enabledEdgeTypes={enabledEdgeTypes}
         maxVisible={maxVisibleEdges}
         edgeOpacity={edgeOpacity}
+        familyFilter={familyFilter}
+        searchQuery={searchQuery}
       />
       <InstancedNodes
         nodes={nodes}
@@ -333,6 +452,12 @@ function Scene({
         onNodeHover={onNodeHover}
         maxVisible={maxVisibleNodes}
         nodeSizeMultiplier={nodeSizeMultiplier}
+        colorBy={colorBy}
+        sizeBy={sizeBy}
+        colorScheme={colorScheme}
+        highlightedNodeId={highlightedNodeId}
+        familyFilter={familyFilter}
+        searchQuery={searchQuery}
       />
     </>
   );
@@ -358,6 +483,12 @@ export default function ForceDirectedGraph3DInstanced({
   collisionRadius = 1.0,
   nodeSizeMultiplier = 1.0,
   edgeOpacity = 0.6,
+  colorBy = 'library',
+  sizeBy = 'downloads',
+  colorScheme = 'viridis',
+  highlightedNodeId,
+  familyFilter,
+  searchQuery,
 }: ForceDirectedGraph3DInstancedProps) {
   // Calculate bounds for camera positioning
   const bounds = useMemo(() => {
@@ -458,25 +589,21 @@ export default function ForceDirectedGraph3DInstanced({
           height={height}
           nodeSizeMultiplier={nodeSizeMultiplier}
           edgeOpacity={edgeOpacity}
+          colorBy={colorBy}
+          sizeBy={sizeBy}
+          colorScheme={colorScheme}
+          highlightedNodeId={highlightedNodeId}
+          familyFilter={familyFilter}
+          searchQuery={searchQuery}
         />
       </Canvas>
       
       {/* Performance info overlay */}
-      <div className="graph-performance-info" style={{
-        position: 'absolute',
-        top: '10px',
-        right: '10px',
-        padding: '8px 12px',
-        background: 'rgba(0,0,0,0.7)',
-        color: '#fff',
-        borderRadius: '4px',
-        fontSize: '12px',
-        fontFamily: 'monospace',
-      }}>
+      <div className="graph-performance-info">
         <div>Nodes: {nodes.length.toLocaleString()}</div>
         <div>Edges: {links.length.toLocaleString()}</div>
         {nodes.length > maxVisibleNodes && (
-          <div style={{ color: '#f59e0b' }}>
+          <div className="graph-performance-warning">
             Showing top {maxVisibleNodes.toLocaleString()} by popularity
           </div>
         )}

@@ -57,17 +57,20 @@ export interface FilterState {
   getActiveFilterCount: () => number;
 }
 
-// Load theme from localStorage or default to light
+// Load theme from localStorage or system preference, default to dark
 const getInitialTheme = (): Theme => {
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem('theme');
     if (saved === 'dark' || saved === 'light') return saved;
-    // Check system preference
+    // Check system preference (prefers-color-scheme)
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
       return 'dark';
     }
+    // If system prefers light, check if user has explicitly set dark before
+    // Otherwise default to dark mode
+    return 'dark';
   }
-  return 'light';
+  return 'dark';
 };
 
 export const useFilterStore = create<FilterState>((set, get) => ({
@@ -111,6 +114,7 @@ export const useFilterStore = create<FilterState>((set, get) => ({
     set({ theme });
     if (typeof window !== 'undefined') {
       localStorage.setItem('theme', theme);
+      localStorage.setItem('theme-preference-set', 'true');
       document.documentElement.setAttribute('data-theme', theme);
     }
   },

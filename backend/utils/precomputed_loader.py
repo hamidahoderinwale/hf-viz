@@ -181,6 +181,79 @@ class PrecomputedDataLoader:
         return df, embeddings, metadata
 
 
+def download_network_from_hf_hub(data_dir: str, version: str = "v1") -> bool:
+    """
+    Download pre-computed network graph from Hugging Face Hub.
+    
+    Args:
+        data_dir: Directory to save the network file
+        version: Version tag for the data
+    
+    Returns:
+        True if download successful, False otherwise
+    """
+    try:
+        from huggingface_hub import hf_hub_download
+        import os
+        from pathlib import Path
+        
+        data_path = Path(data_dir)
+        data_path.mkdir(parents=True, exist_ok=True)
+        
+        network_file = data_path / "full_derivative_network.pkl"
+        metadata_file = data_path / "network_metadata.json"
+        
+        # Skip if already exists
+        if network_file.exists():
+            logger.info(f"Network file already exists: {network_file}")
+            return True
+        
+        logger.info(f"Downloading pre-computed network graph from HF Hub...")
+        logger.info(f"Dataset: {HF_PRECOMPUTED_DATASET}, Version: {version}")
+        
+        try:
+            # Try to download network file
+            downloaded_path = hf_hub_download(
+                repo_id=HF_PRECOMPUTED_DATASET,
+                filename=f"full_derivative_network_{version}.pkl",
+                repo_type="dataset",
+                local_dir=str(data_path),
+                local_dir_use_symlinks=False
+            )
+            
+            # Rename to standard name if needed
+            if downloaded_path != str(network_file):
+                import shutil
+                shutil.move(downloaded_path, str(network_file))
+            
+            logger.info(f"Successfully downloaded network graph: {network_file}")
+            
+            # Try to download metadata
+            try:
+                hf_hub_download(
+                    repo_id=HF_PRECOMPUTED_DATASET,
+                    filename=f"network_metadata_{version}.json",
+                    repo_type="dataset",
+                    local_dir=str(data_path),
+                    local_dir_use_symlinks=False
+                )
+            except Exception as e:
+                logger.warning(f"Could not download network metadata: {e}")
+            
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Network file not found in HF Hub (this is optional): {e}")
+            return False
+            
+    except ImportError:
+        logger.warning("huggingface_hub not available. Cannot download network from HF Hub.")
+        return False
+    except Exception as e:
+        logger.error(f"Error downloading network from HF Hub: {e}")
+        return False
+
+
 def download_from_hf_hub(data_dir: str, version: str = "v1") -> bool:
     """
     Download precomputed data from HuggingFace Hub.
@@ -282,6 +355,18 @@ def download_from_hf_hub(data_dir: str, version: str = "v1") -> bool:
                 logger.info("Downloaded single embeddings parquet file")
             except Exception:
                 logger.info("Single embeddings file not available either")
+        
+        # Try to download pre-computed network graph (optional)
+        try:
+            network_path = hf_hub_download(
+                repo_id=dataset_id,
+                filename=f"full_derivative_network_{version}.pkl",
+                repo_type="dataset",
+                local_dir=data_dir
+            )
+            logger.info(f"Downloaded pre-computed network graph to {network_path}")
+        except Exception as e:
+            logger.info(f"Pre-computed network graph not available (optional): {e}")
         
         return True
         

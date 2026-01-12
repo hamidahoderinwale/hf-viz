@@ -1638,7 +1638,10 @@ async def get_family_network(
 async def get_full_derivative_network(
     edge_types: Optional[str] = Query(None, description="Comma-separated list of edge types to include (finetune,quantized,adapter,merge,parent). If None, includes all types."),
     include_edge_attributes: bool = Query(False, description="Whether to include edge attributes (change in likes, downloads, etc.). Default False for performance."),
-    include_positions: bool = Query(True, description="Whether to include pre-computed 3D positions for each node. Default True for faster rendering.")
+    include_positions: bool = Query(True, description="Whether to include pre-computed 3D positions for each node. Default True for faster rendering."),
+    min_downloads: int = Query(0, description="Minimum downloads to include a model. Use this to reduce network size."),
+    max_nodes: Optional[int] = Query(None, ge=100, le=1000000, description="Maximum number of nodes to include. Models are sorted by downloads. Use this to reduce network size."),
+    use_precomputed: bool = Query(True, description="Try to load pre-computed network graph from disk if available.")
 ):
     """
     Build full derivative relationship network for ALL models in the database.
@@ -1656,8 +1659,8 @@ async def get_full_derivative_network(
     
     try:
         import time
+        import networkx as nx
         start_time = time.time()
-        logger.info(f"Building full derivative network for {len(deps.df):,} models...")
         
         # Check if dataframe has required columns
         required_columns = ['model_id']
@@ -1668,26 +1671,94 @@ async def get_full_derivative_network(
                 detail=f"Missing required columns: {missing_columns}"
             )
         
+        # Try to load pre-computed network graph
+        graph = None
+        if use_precomputed:
+            try:
+                backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                root_dir = os.path.dirname(backend_dir)
+                precomputed_dir = os.path.join(root_dir, "precomputed_data")
+                graph_file = os.path.join(precomputed_dir, "full_derivative_network.pkl")
+                
+                # Try to download from HF Hub if not found locally (for Spaces deployment)
+                if not os.path.exists(graph_file):
+                    logger.info("Pre-computed network not found locally. Attempting to download from HF Hub...")
+                    from utils.precomputed_loader import download_network_from_hf_hub
+                    download_network_from_hf_hub(precomputed_dir, version="v1")
+                
+                if os.path.exists(graph_file):
+                    logger.info(f"Loading pre-computed network graph from {graph_file}...")
+                    with open(graph_file, 'rb') as f:
+                        graph = pickle.load(f)
+                    logger.info(f"Loaded pre-computed graph: {graph.number_of_nodes():,} nodes, {graph.number_of_edges():,} edges")
+                else:
+                    logger.info("Pre-computed network graph not available. Will build from scratch.")
+            except Exception as e:
+                logger.warning(f"Could not load pre-computed network graph: {e}. Will build from scratch.")
+        
+        # Filter dataframe if needed
+        filtered_df = deps.df.copy()
+        if min_downloads > 0:
+            filtered_df = filtered_df[filtered_df.get('downloads', 0) >= min_downloads]
+            logger.info(f"Filtered to {len(filtered_df):,} models with >= {min_downloads} downloads")
+        
+        if max_nodes and len(filtered_df) > max_nodes:
+            # Sort by downloads and take top N
+            filtered_df = filtered_df.nlargest(max_nodes, 'downloads', keep='first')
+            logger.info(f"Limited to top {max_nodes:,} models by downloads")
+        
+        logger.info(f"Building full derivative network for {len(filtered_df):,} models...")
+        
         filter_types = None
         if edge_types:
             filter_types = [t.strip() for t in edge_types.split(',') if t.strip()]
         
-        try:
-            network_builder = ModelNetworkBuilder(deps.df)
-            logger.info("Calling build_full_derivative_network...")
+        # Build graph if not loaded from disk
+        if graph is None:
+            try:
+                network_builder = ModelNetworkBuilder(filtered_df)
+                logger.info("Calling build_full_derivative_network...")
+                
+                # Disable edge attributes for very large graphs to improve performance
+                # They can be slow to compute for 100k+ edges
+                graph = network_builder.build_full_derivative_network(
+                    include_edge_attributes=include_edge_attributes,
+                    filter_edge_types=filter_types
+                )
+            except Exception as build_error:
+                logger.error(f"Error in build_full_derivative_network: {build_error}", exc_info=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to build network graph: {str(build_error)}"
+                )
+        else:
+            # Filter pre-computed graph if needed
+            if filter_types:
+                # Remove edges that don't match filter
+                edges_to_remove = []
+                for source, target, attrs in graph.edges(data=True):
+                    edge_types_list = attrs.get('edge_types', [])
+                    if not isinstance(edge_types_list, list):
+                        edge_types_list = [edge_types_list] if edge_types_list else []
+                    if not any(et in filter_types for et in edge_types_list):
+                        edges_to_remove.append((source, target))
+                graph.remove_edges_from(edges_to_remove)
+                # Remove isolated nodes
+                isolated = list(nx.isolates(graph))
+                graph.remove_nodes_from(isolated)
+                logger.info(f"Filtered graph: {graph.number_of_nodes():,} nodes, {graph.number_of_edges():,} edges")
             
-            # Disable edge attributes for very large graphs to improve performance
-            # They can be slow to compute for 100k+ edges
-            graph = network_builder.build_full_derivative_network(
-                include_edge_attributes=include_edge_attributes,
-                filter_edge_types=filter_types
-            )
-        except Exception as build_error:
-            logger.error(f"Error in build_full_derivative_network: {build_error}", exc_info=True)
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to build network graph: {str(build_error)}"
-            )
+            # Filter nodes by downloads if needed
+            if min_downloads > 0 or max_nodes:
+                nodes_to_remove = []
+                for node_id in graph.nodes():
+                    if node_id in filtered_df.index:
+                        continue
+                    nodes_to_remove.append(node_id)
+                graph.remove_nodes_from(nodes_to_remove)
+                isolated = list(nx.isolates(graph))
+                graph.remove_nodes_from(isolated)
+                logger.info(f"Filtered graph by model selection: {graph.number_of_nodes():,} nodes, {graph.number_of_edges():,} edges")
         
         build_time = time.time() - start_time
         logger.info(f"Graph built in {build_time:.2f}s: {graph.number_of_nodes():,} nodes, {graph.number_of_edges():,} edges")
